@@ -1,0 +1,17 @@
+{
+  "name": "TeleHub — Telegram Broadcast Command Center",
+  "short_name": "TeleHub",
+  "description": "Enterprise-grade Telegram Broadcast & Queue Management Dashboard",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#0088cc",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

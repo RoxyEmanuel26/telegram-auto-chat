@@ -1,0 +1,318 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum ChannelType {
+  CHANNEL
+  GROUP
+  SUPERGROUP
+}
+
+enum ParseMode {
+  MARKDOWN
+  HTML
+  PLAIN
+}
+
+enum MediaType {
+  NONE
+  PHOTO
+  VIDEO
+  DOCUMENT
+  AUDIO
+  VOICE
+  POLL
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  QUEUED
+  SENDING
+  SENT
+  PARTIAL_SENT
+  FAILED
+  CANCELLED
+}
+
+enum TargetStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum RecurrenceType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+model User {
+  id                 String         @id @default(uuid())
+  email              String         @unique
+  password           String
+  name               String
+  avatar             String?
+  role               Role           @default(VIEWER)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  lastLoginAt        DateTime?
+  isActive           Boolean        @default(true)
+  twoFactorEnabled   Boolean        @default(false)
+  twoFactorSecret    String?
+  
+  bots               TelegramBot[]
+  posts              Post[]
+  imports            BulkImport[]
+  templates          Template[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+
+  @@index([email])
+}
+
+model TelegramBot {
+  id          String            @id @default(uuid())
+  name        String
+  token       String            // Encryptedbot token
+  username    String
+  avatarUrl   String?
+  description String?
+  isActive    Boolean           @default(true)
+  ownerId     String
+  owner       User              @relation(fields: [ownerId], references: [id])
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  channels    TelegramChannel[]
+  posts       Post[]
+  imports     BulkImport[]
+  webhooks    Webhook[]
+
+  @@index([ownerId])
+}
+
+model TelegramChannel {
+  id          String        @id @default(uuid())
+  chatId      String        @unique // Telegram chat ID (e.g. -10012345678)
+  name        String
+  type        ChannelType
+  username    String?
+  memberCount Int           @default(0)
+  avatarUrl   String?
+  description String?
+  botId       String
+  bot         TelegramBot   @relation(fields: [botId], references: [id])
+  isActive    Boolean       @default(true)
+  tags        String[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  postTargets PostTarget[]
+  analytics   Analytics[]
+
+  @@index([botId])
+  @@index([tags])
+}
+
+model Post {
+  id                    String               @id @default(uuid())
+  title                 String
+  content               String
+  parseMode             ParseMode            @default(MARKDOWN)
+  mediaType             MediaType            @default(NONE)
+  mediaUrl              String?
+  mediaCaption          String?
+  mediaFileId           String?
+  
+  status                PostStatus           @default(DRAFT)
+  scheduledAt           DateTime?
+  sentAt                DateTime?
+  timezone              String               @default("UTC")
+  recurrence            Json?                // JSON object defining recurrence
+  
+  disableNotification   Boolean              @default(false)
+  protectContent        Boolean              @default(false)
+  disableWebPagePreview Boolean              @default(false)
+  inlineKeyboard        Json?                // JSON format button grid
+  pollOptions           Json?                // JSON formatted options array
+  pollType              String?
+  pollAnonymous         Boolean              @default(true)
+  
+  authorId              String
+  author                User                 @relation(fields: [authorId], references: [id])
+  botId                 String
+  bot                   TelegramBot          @relation(fields: [botId], references: [id])
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  deletedAt             DateTime?            // Soft delete support
+  tags                  String[]
+  
+  targets               PostTarget[]
+  recurrences           ScheduleRecurrence[]
+  analytics             Analytics[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([authorId])
+  @@index([botId])
+}
+
+model PostTarget {
+  id                String          @id @default(uuid())
+  postId            String
+  post              Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  channelId         String
+  channel           TelegramChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  status            TargetStatus    @default(PENDING)
+  telegramMessageId Int?
+  sentAt            DateTime?
+  errorMessage      String?
+  retryCount        Int             @default(0)
+  lastRetryAt       DateTime?
+
+  @@index([postId])
+  @@index([channelId])
+  @@index([status])
+}
+
+model BulkImport {
+  id            String       @id @default(uuid())
+  filename      String
+  originalName  String
+  totalRows     Int
+  processedRows Int          @default(0)
+  successRows   Int          @default(0)
+  failedRows    Int          @default(0)
+  status        ImportStatus @default(PENDING)
+  errorLog      Json?
+  uploadedById  String
+  uploadedBy    User         @relation(fields: [uploadedById], references: [id])
+  botId         String
+  bot           TelegramBot  @relation(fields: [botId], references: [id])
+  createdAt     DateTime     @default(now())
+  completedAt   DateTime?
+
+  @@index([uploadedById])
+  @@index([botId])
+}
+
+model Template {
+  id             String    @id @default(uuid())
+  name           String
+  content        String
+  parseMode      ParseMode @default(MARKDOWN)
+  mediaType      MediaType @default(NONE)
+  mediaUrl       String?
+  inlineKeyboard Json?
+  tags           String[]
+  category       String    @default("Custom")
+  usageCount     Int       @default(0)
+  authorId       String
+  author         User      @relation(fields: [authorId], references: [id])
+  isPublic       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([authorId])
+  @@index([category])
+}
+
+model ScheduleRecurrence {
+  id                 String         @id @default(uuid())
+  postId             String
+  post               Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  type               RecurrenceType
+  cronExpression     String?
+  interval           Int?
+  endDate            DateTime?
+  occurrenceCount    Int?
+  currentOccurrence  Int            @default(0)
+  nextRunAt          DateTime?
+  isActive           Boolean        @default(true)
+
+  @@index([postId])
+  @@index([nextRunAt])
+}
+
+model Analytics {
+  id         String          @id @default(uuid())
+  postId     String
+  post       Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  channelId  String
+  channel    TelegramChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  views      Int             @default(0)
+  forwards   Int             @default(0)
+  reactions  Json?
+  linkClicks Int             @default(0)
+  recordedAt DateTime        @default(now())
+
+  @@index([postId])
+  @@index([channelId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  resource   String
+  resourceId String?
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+}
+
+model Webhook {
+  id              String      @id @default(uuid())
+  name            String
+  url             String
+  secret          String
+  events          String[]
+  botId           String
+  bot             TelegramBot @relation(fields: [botId], references: [id])
+  isActive        Boolean     @default(true)
+  lastTriggeredAt DateTime?
+  failureCount    Int         @default(0)
+  createdAt       DateTime    @default(now())
+
+  @@index([botId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}

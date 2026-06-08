@@ -1,0 +1,22 @@
+{
+  "name": "telehub-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TeleHub - Telegram Broadcast Command Center Monorepo",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:server": "pnpm --filter server dev",
+    "dev": "pnpm run --parallel dev:*",
+    "build:web": "pnpm --filter web build",
+    "build:server": "pnpm --filter server build",
+    "build:shared": "pnpm --filter shared build",
+    "build": "pnpm run build:shared && pnpm run build:server && pnpm run build:web",
+    "db:migrate": "pnpm --filter server db:migrate",
+    "db:seed": "pnpm --filter server db:seed",
+    "db:reset": "pnpm --filter server db:reset",
+    "test": "pnpm --filter server test"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

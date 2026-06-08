@@ -1,0 +1,11 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+allowBuilds:
+  bcrypt: true
+  prisma: true
+  "@prisma/client": true
+  msgpackr-extract: true
+  sharp: true
+  unrs-resolver: true
