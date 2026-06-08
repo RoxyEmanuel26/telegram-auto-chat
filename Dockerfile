@@ -35,4 +35,4 @@ ENV PORT=7860
 EXPOSE 7860
 
 # Run database migrations and start the server
-CMD ["sh", "-c", "pnpm dlx prisma db push --accept-data-loss && pnpm start"]
+CMD ["sh", "-c", "pnpm exec prisma db push --accept-data-loss && pnpm start"]
