@@ -1,6 +1,9 @@
 # Base image
 FROM node:20-alpine AS base
 
+# Install openssl and libc6-compat for Prisma compatibility
+RUN apk add --no-cache openssl libc6-compat
+
 # Install pnpm
 RUN npm install -g pnpm
 
