@@ -1,8 +1,21 @@
+import dotenv from 'dotenv';
+
+// Load environment variables FIRST, before any other imports that may reference them
+dotenv.config();
+
+// Validate required environment variables
+const REQUIRED_ENV_VARS = ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_KEY'];
+const missingVars = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
+if (missingVars.length > 0) {
+  console.error(`❌ Missing required environment variables: ${missingVars.join(', ')}`);
+  console.error('💡 Copy .env.example to .env and fill in your values. Run: pnpm gen:secrets');
+  process.exit(1);
+}
+
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import logger from './utils/logger';
 import authRoutes from './routes/auth.routes';
@@ -19,9 +32,6 @@ import analyticsRoutes from './routes/analytics.routes';
 import path from 'path';
 import prisma from './utils/prisma';
 import { initScheduler } from './services/scheduler.service';
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -132,5 +142,16 @@ app.listen(PORT, () => {
   // Start Recurring Scheduler Daemon
   initScheduler();
 });
+
+// Graceful Shutdown
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`${signal} received. Starting graceful shutdown...`);
+  await prisma.$disconnect();
+  logger.info('Database connection closed.');
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 export default app;

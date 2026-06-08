@@ -93,13 +93,13 @@ model User {
 model TelegramBot {
   id          String            @id @default(uuid())
   name        String
-  token       String            // Encryptedbot token
+  token       String            // Encrypted bot token
   username    String
   avatarUrl   String?
   description String?
   isActive    Boolean           @default(true)
   ownerId     String
-  owner       User              @relation(fields: [ownerId], references: [id])
+  owner       User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   
@@ -121,7 +121,7 @@ model TelegramChannel {
   avatarUrl   String?
   description String?
   botId       String
-  bot         TelegramBot   @relation(fields: [botId], references: [id])
+  bot         TelegramBot   @relation(fields: [botId], references: [id], onDelete: Cascade)
   isActive    Boolean       @default(true)
   tags        String[]
   createdAt   DateTime      @default(now())
@@ -193,6 +193,7 @@ model PostTarget {
   @@index([postId])
   @@index([channelId])
   @@index([status])
+  @@unique([postId, channelId])
 }
 
 model BulkImport {
@@ -206,9 +207,9 @@ model BulkImport {
   status        ImportStatus @default(PENDING)
   errorLog      Json?
   uploadedById  String
-  uploadedBy    User         @relation(fields: [uploadedById], references: [id])
+  uploadedBy    User         @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
   botId         String
-  bot           TelegramBot  @relation(fields: [botId], references: [id])
+  bot           TelegramBot  @relation(fields: [botId], references: [id], onDelete: Cascade)
   createdAt     DateTime     @default(now())
   completedAt   DateTime?
 
@@ -228,7 +229,7 @@ model Template {
   category       String    @default("Custom")
   usageCount     Int       @default(0)
   authorId       String
-  author         User      @relation(fields: [authorId], references: [id])
+  author         User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
   isPublic       Boolean   @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -294,7 +295,7 @@ model Webhook {
   secret          String
   events          String[]
   botId           String
-  bot             TelegramBot @relation(fields: [botId], references: [id])
+  bot             TelegramBot @relation(fields: [botId], references: [id], onDelete: Cascade)
   isActive        Boolean     @default(true)
   lastTriggeredAt DateTime?
   failureCount    Int         @default(0)

@@ -3,18 +3,26 @@
   "version": "1.0.0",
   "private": true,
   "description": "TeleHub - Telegram Broadcast Command Center Monorepo",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev:web": "pnpm --filter web dev",
     "dev:server": "pnpm --filter server dev",
     "dev": "pnpm run --parallel dev:*",
-    "build:web": "pnpm --filter web build",
-    "build:server": "pnpm --filter server build",
     "build:shared": "pnpm --filter shared build",
+    "build:server": "pnpm --filter server build",
+    "build:web": "pnpm --filter web build",
     "build": "pnpm run build:shared && pnpm run build:server && pnpm run build:web",
+    "typecheck": "pnpm --filter server exec tsc --noEmit && pnpm --filter web exec tsc --noEmit",
+    "lint": "pnpm --filter web lint",
+    "clean": "pnpm -r exec -- rm -rf dist .next node_modules/.cache",
     "db:migrate": "pnpm --filter server db:migrate",
     "db:seed": "pnpm --filter server db:seed",
     "db:reset": "pnpm --filter server db:reset",
-    "test": "pnpm --filter server test"
+    "test": "pnpm --filter server test",
+    "gen:secrets": "node -e \"const c=require('crypto');console.log('JWT_SECRET='+c.randomBytes(48).toString('base64'));console.log('JWT_REFRESH_SECRET='+c.randomBytes(48).toString('base64'));console.log('ENCRYPTION_KEY='+c.randomBytes(32).toString('hex'))\""
   },
   "devDependencies": {
     "typescript": "^5.4.5"

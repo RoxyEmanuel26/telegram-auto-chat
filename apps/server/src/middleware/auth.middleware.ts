@@ -27,11 +27,14 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
     }
 
     if (!token) {
-      res.status(410).json({ error: 'Authentication token is missing' });
+      res.status(401).json({ error: 'Authentication token is missing' });
       return;
     }
 
-    const secret = process.env.JWT_SECRET || 'fallback-super-secret-jwt-key';
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error('JWT_SECRET environment variable is not configured');
+    }
     const decoded = jwt.verify(token, secret) as TokenPayload;
 
     const user = await prisma.user.findUnique({
