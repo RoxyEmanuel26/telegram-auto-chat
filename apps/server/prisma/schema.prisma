@@ -161,7 +161,7 @@ model Post {
   authorId              String
   author                User                 @relation(fields: [authorId], references: [id])
   botId                 String
-  bot                   TelegramBot          @relation(fields: [botId], references: [id])
+  bot                   TelegramBot          @relation(fields: [botId], references: [id], onDelete: Cascade)
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   deletedAt             DateTime?            // Soft delete support
