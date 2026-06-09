@@ -83,9 +83,9 @@ export const addBot = async (req: Request, res: Response): Promise<void> => {
     await logAuditEvent(req.user.id, 'BOT_ADD', 'TelegramBot', bot.id, { newVal: { name, username } });
 
     res.status(201).json({ message: 'Bot berhasil ditambahkan', bot });
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`Add bot error: ${error}`);
-    res.status(500).json({ error: 'Terjadi kesalahan internal saat menambahkan bot' });
+    res.status(500).json({ error: `Terjadi kesalahan internal saat menambahkan bot: ${error.message || error}` });
   }
 };
 
