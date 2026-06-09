@@ -8,6 +8,68 @@ import { dispatchWebhook } from './webhook.service';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
+// Helper: Escape HTML special characters for plain text captions
+const escapeHtml = (text: string): string => {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+};
+
+// Helper: Clean and format HTML to Telegram's supported tag list
+const cleanHtmlForTelegram = (html: string): string => {
+  if (!html) return '';
+  let clean = html;
+  
+  // Convert headers: <h1>...</h1> -> <b>...</b>\n
+  clean = clean.replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '<b>$1</b>\n');
+  
+  // Convert lists: <li>...</li> -> • ...\n
+  clean = clean.replace(/<li[^>]*>(.*?)<\/li>/gi, '• $1\n');
+  clean = clean.replace(/<\/?(ul|ol)[^>]*>/gi, '');
+  
+  // Convert paragraph blocks:
+  clean = clean.replace(/<p[^>]*>/gi, '');
+  clean = clean.replace(/<\/p>/gi, '\n');
+  
+  // Convert line breaks:
+  clean = clean.replace(/<br\s*\/?>/gi, '\n');
+  
+  // Strip attributes except href on <a> and class="tg-spoiler" on <span>
+  clean = clean.replace(/<([a-z0-9]+)(?:\s+[^>]*?)(\/?)>/gi, (match, tag, selfClosing) => {
+    const tagName = tag.toLowerCase();
+    if (tagName === 'a') {
+      const hrefMatch = match.match(/\shref=["']([^"']*)["']/i);
+      if (hrefMatch) {
+        return `<a href="${hrefMatch[1]}">`;
+      }
+      return '<a>';
+    }
+    const allowedTags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre', 'span'];
+    if (allowedTags.includes(tagName)) {
+      if (tagName === 'span') {
+        const classMatch = match.match(/\sclass=["']([^"']*)["']/i);
+        if (classMatch && classMatch[1].includes('tg-spoiler')) {
+          return '<span class="tg-spoiler">';
+        }
+      }
+      return `<${tagName}${selfClosing ? '/' : ''}>`;
+    }
+    return '';
+  });
+
+  clean = clean.replace(/<\/([a-z0-9]+)>/gi, (match, tag) => {
+    const tagName = tag.toLowerCase();
+    const allowedTags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre', 'span', 'a'];
+    if (allowedTags.includes(tagName)) {
+      return `</${tagName}>`;
+    }
+    return '';
+  });
+
+  return clean.trim();
+};
+
 // Setup Redis connection for BullMQ
 const redisConnection = new Redis(REDIS_URL, {
   maxRetriesPerRequest: null
@@ -105,39 +167,66 @@ const worker = new Worker(
         protect_content: post.protectContent,
       };
 
+      // Determine text content and caption formatting based on parseMode
+      let textToSend = post.content;
+      let captionToSend = post.mediaCaption || post.content;
+      let parseModeHeader: string | undefined = undefined;
+
+      if (post.parseMode === 'HTML') {
+        parseModeHeader = 'HTML';
+        textToSend = cleanHtmlForTelegram(post.content);
+        captionToSend = post.mediaCaption 
+          ? escapeHtml(post.mediaCaption) 
+          : cleanHtmlForTelegram(post.content);
+      } else if (post.parseMode === 'MARKDOWN') {
+        parseModeHeader = 'Markdown';
+      }
+
       // Handle message payload based on media type
       if (post.mediaType === MediaType.NONE) {
         method = 'sendMessage';
-        payload.text = post.content;
-        payload.parse_mode = 'HTML';
+        payload.text = textToSend;
+        if (parseModeHeader) {
+          payload.parse_mode = parseModeHeader;
+        }
         if (post.disableWebPagePreview) {
           payload.disable_web_page_preview = true;
         }
       } else if (post.mediaType === MediaType.PHOTO && post.mediaUrl) {
         method = 'sendPhoto';
         payload.photo = post.mediaUrl;
-        payload.caption = post.mediaCaption || post.content;
-        payload.parse_mode = 'HTML';
+        payload.caption = captionToSend;
+        if (parseModeHeader) {
+          payload.parse_mode = parseModeHeader;
+        }
       } else if (post.mediaType === MediaType.VIDEO && post.mediaUrl) {
         method = 'sendVideo';
         payload.video = post.mediaUrl;
-        payload.caption = post.mediaCaption || post.content;
-        payload.parse_mode = 'HTML';
+        payload.caption = captionToSend;
+        if (parseModeHeader) {
+          payload.parse_mode = parseModeHeader;
+        }
       } else if (post.mediaType === MediaType.DOCUMENT && post.mediaUrl) {
         method = 'sendDocument';
         payload.document = post.mediaUrl;
-        payload.caption = post.mediaCaption || post.content;
-        payload.parse_mode = 'HTML';
+        payload.caption = captionToSend;
+        if (parseModeHeader) {
+          payload.parse_mode = parseModeHeader;
+        }
       } else if (post.mediaType === MediaType.AUDIO && post.mediaUrl) {
         method = 'sendAudio';
         payload.audio = post.mediaUrl;
-        payload.caption = post.mediaCaption || post.content;
-        payload.parse_mode = 'HTML';
+        payload.caption = captionToSend;
+        if (parseModeHeader) {
+          payload.parse_mode = parseModeHeader;
+        }
       } else if (post.mediaType === MediaType.VOICE && post.mediaUrl) {
         method = 'sendVoice';
         payload.voice = post.mediaUrl;
-        payload.caption = post.mediaCaption || post.content;
-        payload.parse_mode = 'HTML';
+        payload.caption = captionToSend;
+        if (parseModeHeader) {
+          payload.parse_mode = parseModeHeader;
+        }
       }
 
       try {

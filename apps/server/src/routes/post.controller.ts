@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { broadcastQueue } from '../services/queue.service';
-import { PostStatus, TargetStatus, RecurrenceType } from 'shared';
+import { PostStatus, TargetStatus, RecurrenceType, ParseMode } from 'shared';
 import parser from 'cron-parser';
 
 export const createPost = async (req: Request, res: Response): Promise<void> => {
@@ -10,6 +10,7 @@ export const createPost = async (req: Request, res: Response): Promise<void> => 
     const {
       title,
       content,
+      parseMode,
       botId,
       channelIds,
       mediaType,
@@ -49,6 +50,7 @@ export const createPost = async (req: Request, res: Response): Promise<void> => 
         data: {
           title,
           content,
+          parseMode: parseMode || ParseMode.HTML,
           botId,
           mediaType: mediaType || 'NONE',
           mediaUrl: mediaUrl || null,

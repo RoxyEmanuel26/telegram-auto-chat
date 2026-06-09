@@ -320,6 +320,7 @@ function ComposerContent() {
     createPostMutation.mutate({
       title,
       content: finalizedContent,
+      parseMode: ParseMode.HTML,
       botId: selectedBotId,
       channelIds: selectedChannelIds,
       mediaType,
