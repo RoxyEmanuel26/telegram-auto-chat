@@ -65,6 +65,7 @@ function ComposerContent() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const templateId = searchParams.get('templateId');
+  const clonePostId = searchParams.get('clonePostId');
 
   // Core Form states
   const [selectedBotId, setSelectedBotId] = useState('');
@@ -174,6 +175,47 @@ function ComposerContent() {
 
     fetchTemplate();
   }, [templateId, editor]);
+
+  // Effect: Fetch and pre-fill post if clonePostId parameter exists
+  useEffect(() => {
+    if (!clonePostId || !editor) return;
+
+    const fetchPost = async () => {
+      try {
+        const res = await api.get<{ post: any }>(`/posts/${clonePostId}`);
+        const post = res.post;
+
+        setTitle(post.title);
+        setSelectedBotId(post.botId || '');
+        
+        if (post.targets) {
+          const channelIds = post.targets.map((t: any) => t.channelId);
+          setSelectedChannelIds(channelIds);
+        }
+
+        setMediaType(post.mediaType);
+        setMediaUrl(post.mediaUrl || '');
+        setMediaCaption(post.mediaCaption || '');
+        setDisableNotification(post.disableNotification ?? false);
+        setProtectContent(post.protectContent ?? false);
+        setDisableWebPagePreview(post.disableWebPagePreview ?? false);
+        
+        if (post.inlineKeyboard && post.inlineKeyboard.inline_keyboard) {
+          setKeyboardRows(post.inlineKeyboard.inline_keyboard);
+        }
+
+        // Populate Tiptap editor with raw content
+        editor.commands.setContent(post.content);
+        setEditorEmpty(post.content === '' || post.content === '<p></p>');
+
+        toast.success(`Postingan "${post.title}" berhasil dimuat ke editor!`);
+      } catch (err: any) {
+        toast.error('Gagal memuat detail postingan');
+      }
+    };
+
+    fetchPost();
+  }, [clonePostId, editor]);
 
   // Visual visual preview generator replacing variables dynamically
   const getPreviewContent = () => {

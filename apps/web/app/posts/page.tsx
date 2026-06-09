@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import SidebarLayout from '@/components/layout/SidebarLayout';
@@ -45,6 +46,7 @@ interface PostDetail extends PostData {
 }
 
 export default function PostsPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
@@ -232,6 +234,34 @@ export default function PostsPage() {
                   )}
                 </div>
 
+                {/* Actions row */}
+                <div className="flex gap-2">
+                  {/* Edit/Clone Button */}
+                  <button
+                    onClick={() => router.push(`/composer?clonePostId=${detailData.post.id}`)}
+                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-2.5 px-3 rounded-xl font-bold flex items-center justify-center space-x-1.5 cursor-pointer transition-all border border-slate-700 hover:scale-[1.02]"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-primary" />
+                    <span>Edit Postingan</span>
+                  </button>
+
+                  {/* Main Retry Button (only if there are failed targets) */}
+                  {detailData.post.targets.some(t => t.status === TargetStatus.FAILED) && (
+                    <button
+                      onClick={() => retryMutation.mutate(detailData.post.id)}
+                      disabled={retryMutation.isPending}
+                      className="flex-1 bg-primary hover:bg-primary/95 text-white py-2.5 px-3 rounded-xl font-bold flex items-center justify-center space-x-1.5 cursor-pointer transition-all disabled:opacity-50 hover:scale-[1.02]"
+                    >
+                      {retryMutation.isPending ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      <span>Kirim Ulang Gagal</span>
+                    </button>
+                  )}
+                </div>
+
                 {/* Message preview block */}
                 <div className="p-3 bg-slate-950/40 border border-slate-850 rounded-xl space-y-1.5 max-h-32 overflow-y-auto">
                   <span className="text-[10px] font-bold text-slate-500 uppercase">Isi Pesan</span>
@@ -240,6 +270,48 @@ export default function PostsPage() {
                     dangerouslySetInnerHTML={{ __html: typeof window !== 'undefined' ? DOMPurify.sanitize(detailData.post.content) : detailData.post.content }}
                   />
                 </div>
+
+                {/* Error Analysis & logs explanation */}
+                {detailData.post.targets.some(t => t.status === TargetStatus.FAILED) && (
+                  <div className="p-3 bg-red-950/15 border border-red-900/30 rounded-xl space-y-2.5">
+                    <div className="flex items-center space-x-1.5 text-red-400">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span className="font-bold text-[9px] uppercase tracking-wider">Analisis Kegagalan</span>
+                    </div>
+                    <div className="space-y-2 text-[10px] leading-relaxed">
+                      {detailData.post.targets.filter(t => t.status === TargetStatus.FAILED).map((target) => {
+                        const errorMsg = target.errorMessage || '';
+                        let explanation = 'Kesalahan tidak diketahui.';
+
+                        if (errorMsg.includes('decryption failed') || errorMsg.includes('Kesalahan Dekripsi')) {
+                          explanation = 'Kunci enkripsi server berubah. Silakan HAPUS bot ini lalu daftarkan ulang dengan token yang sama agar token terenkripsi dengan kunci baru.';
+                        } else if (errorMsg.includes('chat not found') || errorMsg.includes('400: Bad Request: chat not found')) {
+                          explanation = 'Channel/Grup tidak ditemukan. Pastikan username channel/group benar dan Bot sudah dimasukkan ke dalam channel tersebut sebagai Admin.';
+                        } else if (errorMsg.includes('bot is not a member') || errorMsg.includes('403: Forbidden: bot is not a member')) {
+                          explanation = 'Bot bukan anggota grup/channel. Bot harus ditambahkan ke grup/channel tersebut sebagai Admin terlebih dahulu.';
+                        } else if (errorMsg.includes('bot was blocked') || errorMsg.includes('403: Forbidden: bot was blocked by the user')) {
+                          explanation = 'Bot diblokir oleh penerima atau grup telah membatasi bot.';
+                        } else if (errorMsg.includes('can\'t parse entities') || errorMsg.includes('400: Bad Request: can\'t parse entities')) {
+                          explanation = 'Format teks ditolak oleh parser Telegram (biasanya karena ada tag HTML seperti <span> atau tag Markdown yang salah/tidak ditutup). Coba edit postingan untuk membersihkan format teks.';
+                        } else if (errorMsg.includes('token') || errorMsg.includes('Unauthorized')) {
+                          explanation = 'Token bot tidak valid atau telah dicabut di @BotFather. Silakan cek kembali token bot Anda.';
+                        } else if (errorMsg) {
+                          explanation = errorMsg;
+                        }
+
+                        return (
+                          <div key={target.id} className="border-t border-red-900/10 pt-2 first:border-0 first:pt-0">
+                            <span className="font-bold text-red-400">📍 {target.channel.name}:</span>
+                            <div className="bg-slate-950/40 p-2 rounded-lg font-mono text-[9px] text-slate-300 mt-1 break-all border border-slate-900">
+                              {errorMsg || 'Tidak ada pesan log'}
+                            </div>
+                            <p className="text-slate-400 mt-1">💡 <span className="font-semibold text-slate-300">Solusi:</span> {explanation}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Targets breakdown list */}
                 <div className="space-y-3">
