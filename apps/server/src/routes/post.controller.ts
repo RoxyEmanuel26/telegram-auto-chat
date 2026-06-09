@@ -143,6 +143,13 @@ export const getPosts = async (req: Request, res: Response): Promise<void> => {
         recurrences: {
           where: { isActive: true }
         },
+        targets: {
+          select: {
+            id: true,
+            status: true,
+            errorMessage: true
+          }
+        },
         _count: {
           select: { targets: true }
         }

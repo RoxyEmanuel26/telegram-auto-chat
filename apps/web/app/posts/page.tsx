@@ -8,10 +8,16 @@ import SidebarLayout from '@/components/layout/SidebarLayout';
 import { toast } from 'sonner';
 import { 
   History, Eye, RefreshCw, Loader2, ArrowRight, Clock, 
-  CheckCircle, AlertCircle, AlertTriangle, FileText, Bot, X 
+  CheckCircle, AlertCircle, AlertTriangle, FileText, Bot, X, Edit
 } from 'lucide-react';
 import { PostStatus, TargetStatus } from 'shared';
 import DOMPurify from 'dompurify';
+
+interface TargetSummary {
+  id: string;
+  status: TargetStatus;
+  errorMessage: string | null;
+}
 
 interface PostData {
   id: string;
@@ -23,6 +29,7 @@ interface PostData {
     name: string;
     username: string;
   };
+  targets?: TargetSummary[];
   _count: {
     targets: number;
   };
@@ -45,22 +52,58 @@ interface PostDetail extends PostData {
   targets: TargetDetail[];
 }
 
+const getFailureExplanation = (errorMsg: string): string => {
+  if (!errorMsg) return 'Kesalahan tidak diketahui.';
+  const lowerMsg = errorMsg.toLowerCase();
+
+  if (lowerMsg.includes('decryption failed') || lowerMsg.includes('kesalahan dekripsi')) {
+    return 'Kunci enkripsi server berubah. Silakan HAPUS bot ini lalu daftarkan ulang dengan token yang sama agar token terenkripsi dengan kunci baru.';
+  }
+  if (lowerMsg.includes('chat not found') || lowerMsg.includes('bad request: chat not found')) {
+    return 'Channel/Grup tidak ditemukan. Pastikan username channel/group benar dan Bot sudah dimasukkan ke dalam channel tersebut sebagai Admin.';
+  }
+  if (lowerMsg.includes('bot is not a member') || lowerMsg.includes('forbidden: bot is not a member')) {
+    return 'Bot bukan anggota grup/channel. Bot harus ditambahkan ke grup/channel tersebut sebagai Admin terlebih dahulu.';
+  }
+  if (lowerMsg.includes('bot was blocked') || lowerMsg.includes('forbidden: bot was blocked by the user')) {
+    return 'Bot diblokir oleh penerima atau grup telah membatasi bot.';
+  }
+  if (lowerMsg.includes("can't parse entities") || lowerMsg.includes("can't parse message") || lowerMsg.includes('bad request: can\'t parse entities')) {
+    return 'Format teks ditolak oleh parser Telegram (biasanya karena ada tag HTML seperti <span> atau tag Markdown yang salah/tidak ditutup). Coba edit postingan untuk membersihkan format teks.';
+  }
+  if (lowerMsg.includes('token') || lowerMsg.includes('unauthorized') || lowerMsg.includes('401: unauthorized')) {
+    return 'Token bot tidak valid atau telah dicabut di @BotFather. Silakan cek kembali token bot Anda.';
+  }
+  if (lowerMsg.includes('group chat was upgraded to a supergroup') || lowerMsg.includes('upgraded to a supergroup')) {
+    return 'Grup telah ditingkatkan menjadi Supergroup. ID grup lama tidak lagi valid. Telegram memindahkan grup ini ke ID baru. Silakan hapus channel lama dan daftarkan kembali dengan ID/username baru.';
+  }
+  if (lowerMsg.includes('retry after') || lowerMsg.includes('too many requests')) {
+    return 'Batas frekuensi Telegram (Rate Limit) terlampaui. Bot diminta menunggu sebelum mengirim pesan lagi. Pengiriman akan dicoba ulang secara otomatis oleh antrian backend.';
+  }
+  if (lowerMsg.includes('message is too long') || lowerMsg.includes('message too long')) {
+    return 'Pesan terlalu panjang. Telegram membatasi pesan teks maksimal 4096 karakter. Silakan kurangi panjang teks postingan.';
+  }
+  if (lowerMsg.includes('failed to get http url content') || lowerMsg.includes('failed to download')) {
+    return 'Gagal mengambil file media dari URL yang diberikan. Pastikan link foto/video/dokumen dapat diakses secara publik dan formatnya didukung.';
+  }
+  if (lowerMsg.includes('wrong type of the web page preview') || lowerMsg.includes('web page preview')) {
+    return 'Pratinjau halaman web (Web Page Preview) gagal karena format URL tidak valid.';
+  }
+  return errorMsg;
+};
+
 export default function PostsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [refetchInt, setRefetchInt] = useState<number | false>(false);
+  const [detailRefetchInt, setDetailRefetchInt] = useState<number | false>(false);
 
   // Query: Fetch all posts
   const { data: postsData, isLoading: postsLoading } = useQuery<{ posts: PostData[] }>({
     queryKey: ['posts'],
     queryFn: () => api.get('/posts'),
-    refetchInterval: (query) => {
-      const posts = query.state.data?.posts;
-      const hasActive = posts?.some(
-        (post: any) => post.status === PostStatus.QUEUED || post.status === PostStatus.SENDING
-      );
-      return hasActive ? 4000 : false;
-    }
+    refetchInterval: refetchInt
   });
 
   // Query: Fetch selected post detail
@@ -68,12 +111,66 @@ export default function PostsPage() {
     queryKey: ['post-detail', selectedPostId],
     queryFn: () => api.get(`/posts/${selectedPostId}`),
     enabled: !!selectedPostId,
-    refetchInterval: (query) => {
-      const post = query.state.data?.post;
-      const isActive = post && (post.status === PostStatus.QUEUED || post.status === PostStatus.SENDING);
-      return isActive ? 4000 : false;
-    }
+    refetchInterval: detailRefetchInt
   });
+
+  // Reactive Polling Logic
+  React.useEffect(() => {
+    const hasActive = postsData?.posts?.some(
+      (post: any) => post.status === PostStatus.QUEUED || post.status === PostStatus.SENDING
+    );
+    setRefetchInt(hasActive ? 4000 : false);
+  }, [postsData]);
+
+  React.useEffect(() => {
+    const isActive = detailData?.post && (
+      detailData.post.status === PostStatus.QUEUED || detailData.post.status === PostStatus.SENDING
+    );
+    setDetailRefetchInt(isActive ? 4000 : false);
+  }, [detailData]);
+
+  // Target Breakdown Helper
+  const getPostTargetsBreakdown = (post: PostData) => {
+    if (!post.targets || post.targets.length === 0) return null;
+    const total = post._count.targets;
+    const sent = post.targets.filter(t => t.status === TargetStatus.SENT).length;
+    const failed = post.targets.filter(t => t.status === TargetStatus.FAILED).length;
+    const pending = post.targets.filter(t => t.status === TargetStatus.PENDING).length;
+
+    if (post.status === PostStatus.QUEUED || post.status === PostStatus.SENDING) {
+      return (
+        <span className="text-[10px] text-slate-400 block mt-0.5 font-medium">
+          Memproses: {sent + failed}/{total} Channel ({pending} antri)
+        </span>
+      );
+    }
+
+    if (post.status === PostStatus.PARTIAL_SENT) {
+      return (
+        <span className="text-[10px] text-amber-400 block mt-0.5 font-medium">
+          {sent} Sukses, {failed} Gagal dari {total} Channel
+        </span>
+      );
+    }
+
+    if (post.status === PostStatus.FAILED) {
+      return (
+        <span className="text-[10px] text-red-400 block mt-0.5 font-medium">
+          Semua {failed} Channel Gagal kirim
+        </span>
+      );
+    }
+
+    if (post.status === PostStatus.SENT) {
+      return (
+        <span className="text-[10px] text-green-400 block mt-0.5 font-medium">
+          Terkirim ke {sent} Channel
+        </span>
+      );
+    }
+
+    return null;
+  };
 
   // Mutation: Retry failed targets
   const retryMutation = useMutation<any, any, string>({
@@ -176,18 +273,57 @@ export default function PostsPage() {
                           </div>
                         </td>
                         <td className="p-4 font-bold text-slate-200">
-                          {post._count.targets} Channel
+                          <div>
+                            <span>{post._count.targets} Channel</span>
+                            {getPostTargetsBreakdown(post)}
+                          </div>
                         </td>
                         <td className="p-4">
                           {getStatusBadge(post.status)}
                         </td>
                         <td className="p-4 text-right">
-                          <button
-                            onClick={() => setSelectedPostId(post.id)}
-                            className="p-2 rounded-lg bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Retry button inside table row if there are failed targets */}
+                            {post.targets?.some(t => t.status === TargetStatus.FAILED) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  retryMutation.mutate(post.id);
+                                }}
+                                disabled={retryMutation.isPending}
+                                title="Kirim Ulang Gagal"
+                                className="p-2 rounded-lg bg-red-950/25 border border-red-900/20 hover:bg-red-900/20 text-red-400 hover:text-red-300 transition-all cursor-pointer disabled:opacity-50"
+                              >
+                                {retryMutation.isPending && selectedPostId === post.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
+
+                            {/* Edit/Clone Button inside table row if post failed, partial sent, or draft */}
+                            {(post.status === PostStatus.FAILED || post.status === PostStatus.PARTIAL_SENT || post.status === PostStatus.DRAFT) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  router.push(`/composer?clonePostId=${post.id}`);
+                                }}
+                                title="Edit & Kirim Ulang"
+                                className="p-2 rounded-lg bg-slate-850 border border-slate-800 hover:bg-slate-800 hover:text-white text-slate-400 transition-all cursor-pointer"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => setSelectedPostId(post.id)}
+                              title="Lihat Detail"
+                              className={`p-2 rounded-lg transition-all cursor-pointer ${selectedPostId === post.id ? 'bg-primary text-white' : 'bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white'}`}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -281,23 +417,7 @@ export default function PostsPage() {
                     <div className="space-y-2 text-[10px] leading-relaxed">
                       {detailData.post.targets.filter(t => t.status === TargetStatus.FAILED).map((target) => {
                         const errorMsg = target.errorMessage || '';
-                        let explanation = 'Kesalahan tidak diketahui.';
-
-                        if (errorMsg.includes('decryption failed') || errorMsg.includes('Kesalahan Dekripsi')) {
-                          explanation = 'Kunci enkripsi server berubah. Silakan HAPUS bot ini lalu daftarkan ulang dengan token yang sama agar token terenkripsi dengan kunci baru.';
-                        } else if (errorMsg.includes('chat not found') || errorMsg.includes('400: Bad Request: chat not found')) {
-                          explanation = 'Channel/Grup tidak ditemukan. Pastikan username channel/group benar dan Bot sudah dimasukkan ke dalam channel tersebut sebagai Admin.';
-                        } else if (errorMsg.includes('bot is not a member') || errorMsg.includes('403: Forbidden: bot is not a member')) {
-                          explanation = 'Bot bukan anggota grup/channel. Bot harus ditambahkan ke grup/channel tersebut sebagai Admin terlebih dahulu.';
-                        } else if (errorMsg.includes('bot was blocked') || errorMsg.includes('403: Forbidden: bot was blocked by the user')) {
-                          explanation = 'Bot diblokir oleh penerima atau grup telah membatasi bot.';
-                        } else if (errorMsg.includes('can\'t parse entities') || errorMsg.includes('400: Bad Request: can\'t parse entities')) {
-                          explanation = 'Format teks ditolak oleh parser Telegram (biasanya karena ada tag HTML seperti <span> atau tag Markdown yang salah/tidak ditutup). Coba edit postingan untuk membersihkan format teks.';
-                        } else if (errorMsg.includes('token') || errorMsg.includes('Unauthorized')) {
-                          explanation = 'Token bot tidak valid atau telah dicabut di @BotFather. Silakan cek kembali token bot Anda.';
-                        } else if (errorMsg) {
-                          explanation = errorMsg;
-                        }
+                        const explanation = getFailureExplanation(errorMsg);
 
                         return (
                           <div key={target.id} className="border-t border-red-900/10 pt-2 first:border-0 first:pt-0">
