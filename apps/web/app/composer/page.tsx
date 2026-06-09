@@ -563,6 +563,9 @@ function ComposerContent() {
                     rows={2}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white placeholder-slate-500 resize-none focus:outline-none"
                   />
+                  <p className="text-[10px] text-slate-500 leading-normal">
+                    💡 <strong>Catatan:</strong> Jika diisi, teks ini akan menggantikan <strong>Konten Pesan (formatting HTML)</strong> di atas sebagai keterangan media. Kosongkan jika ingin menggunakan Konten Pesan dengan format HTML.
+                  </p>
                 </div>
               </div>
             )}
@@ -902,7 +905,9 @@ function ComposerContent() {
                 <div 
                   className="text-slate-100 leading-relaxed text-xs break-words"
                   dangerouslySetInnerHTML={{ 
-                    __html: getPreviewContent()
+                    __html: mediaType !== MediaType.NONE && mediaCaption.trim() 
+                      ? mediaCaption.replace(/\n/g, '<br />') 
+                      : getPreviewContent()
                   }}
                 />
 
