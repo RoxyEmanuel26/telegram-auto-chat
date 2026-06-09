@@ -34,6 +34,7 @@ import analyticsRoutes from './routes/analytics.routes';
 import path from 'path';
 import prisma from './utils/prisma';
 import { initScheduler } from './services/scheduler.service';
+import { seedDefaultTemplates } from './utils/templateSeeder';
 
 const app = express();
 // Trust proxy header X-Forwarded-For on cloud hosting platforms (like Hugging Face)
@@ -222,6 +223,8 @@ app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
   // Start Recurring Scheduler Daemon
   initScheduler();
+  // Auto-seed default templates
+  seedDefaultTemplates();
 });
 
 // Graceful Shutdown

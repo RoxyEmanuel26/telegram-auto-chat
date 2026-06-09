@@ -150,7 +150,7 @@ export default function TemplatesPage() {
     return matchesSearch && matchesCategory;
   }) || [];
 
-  const categories = ['Promosi', 'Pengumuman', 'Event', 'News', 'Update', 'Custom'];
+  const categories = ['Promosi', 'Pengumuman', 'Event', 'News', 'Update', 'NSFW', 'Cosplay NSFW', 'Custom'];
 
   return (
     <SidebarLayout>
