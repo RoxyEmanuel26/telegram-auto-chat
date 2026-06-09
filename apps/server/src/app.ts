@@ -1,4 +1,6 @@
 import dotenv from 'dotenv';
+import dns from 'dns';
+import https from 'https';
 
 // Load environment variables FIRST, before any other imports that may reference them
 dotenv.config();
@@ -112,6 +114,48 @@ app.get('/api/health', async (req: Request, res: Response) => {
       },
     });
   }
+});
+
+// Diagnostic Route for Network Debugging
+app.get('/api/diag', async (req: Request, res: Response) => {
+  const results: any = { timestamp: new Date() };
+  
+  // 1. DNS Lookup for Telegram API
+  await new Promise<void>((resolve) => {
+    dns.lookup('api.telegram.org', (err, address, family) => {
+      if (err) {
+        results.dns = { success: false, error: err.message || err };
+      } else {
+        results.dns = { success: true, address, family };
+      }
+      resolve();
+    });
+  });
+
+  // 2. HTTP connection using Node.js built-in 'https' module
+  await new Promise<void>((resolve) => {
+    https.get('https://api.telegram.org/', (resHttps) => {
+      results.https = { success: true, statusCode: resHttps.statusCode };
+      resolve();
+    }).on('error', (err) => {
+      results.https = { success: false, error: err.message || err };
+      resolve();
+    });
+  });
+
+  // 3. Connection using Node.js global 'fetch' (undici)
+  try {
+    const fetchRes = await fetch('https://api.telegram.org/', { method: 'HEAD' });
+    results.fetch = { success: true, statusCode: fetchRes.status };
+  } catch (err: any) {
+    results.fetch = { 
+      success: false, 
+      error: err.message || err, 
+      cause: err.cause?.message || err.cause || null 
+    };
+  }
+
+  res.status(200).json(results);
 });
 
 // Serve Uploaded Files Statically
