@@ -142,22 +142,27 @@ app.get('/api/diag', async (req: Request, res: Response) => {
 
   // 2. HTTP connection using Node.js built-in 'https' (with 3s timeout)
   await new Promise<void>((resolve) => {
-    const targetUrl = telegramApiUrl.endsWith('/') ? telegramApiUrl : (telegramApiUrl + '/');
-    const req = https.get(targetUrl, { timeout: 3000 }, (resHttps) => {
-      results.https = { success: true, statusCode: resHttps.statusCode };
+    try {
+      const targetUrl = telegramApiUrl.endsWith('/') ? telegramApiUrl : (telegramApiUrl + '/');
+      const req = https.get(targetUrl, { timeout: 3000 }, (resHttps) => {
+        results.https = { success: true, statusCode: resHttps.statusCode };
+        resolve();
+      });
+      
+      req.on('error', (err) => {
+        results.https = { success: false, error: err.message || err };
+        resolve();
+      });
+      
+      req.on('timeout', () => {
+        req.destroy();
+        results.https = { success: false, error: 'Connection timed out (3s)' };
+        resolve();
+      });
+    } catch (err: any) {
+      results.https = { success: false, error: `Request initialization failed: ${err.message || err}` };
       resolve();
-    });
-    
-    req.on('error', (err) => {
-      results.https = { success: false, error: err.message || err };
-      resolve();
-    });
-    
-    req.on('timeout', () => {
-      req.destroy();
-      results.https = { success: false, error: 'Connection timed out (3s)' };
-      resolve();
-    });
+    }
   });
 
   // 3. Connection using Node.js global 'fetch' (undici) with 3s timeout
