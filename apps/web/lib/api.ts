@@ -26,6 +26,13 @@ class ApiClient {
     const data = await response.json().catch(() => ({}));
     
     if (!response.ok) {
+      if (response.status === 401 && typeof window !== 'undefined') {
+        if (!window.location.pathname.startsWith('/login')) {
+          const { useAuthStore } = require('@/stores/authStore');
+          useAuthStore.getState().clearAuth();
+          window.location.href = '/login';
+        }
+      }
       const errorMsg = data.error || `HTTP error! status: ${response.status}`;
       throw new Error(errorMsg);
     }

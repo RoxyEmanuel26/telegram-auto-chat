@@ -8,8 +8,8 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 
 // Helpers for token generation
-const ACCESS_TOKEN_EXPIRY = '15m';
-const REFRESH_TOKEN_EXPIRY = '7d';
+const ACCESS_TOKEN_EXPIRY = '30d';
+const REFRESH_TOKEN_EXPIRY = '90d';
 
 const generateAccessToken = (userId: string, email: string, role: UserRole, twoFactorVerified: boolean): string => {
   const secret = process.env.JWT_SECRET || 'fallback-super-secret-jwt-key';
