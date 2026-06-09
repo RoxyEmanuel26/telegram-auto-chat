@@ -132,25 +132,39 @@ app.get('/api/diag', async (req: Request, res: Response) => {
     });
   });
 
-  // 2. HTTP connection using Node.js built-in 'https' module
+  // 2. HTTP connection using Node.js built-in 'https' module (with 3s timeout)
   await new Promise<void>((resolve) => {
-    https.get('https://api.telegram.org/', (resHttps) => {
+    const req = https.get('https://api.telegram.org/', { timeout: 3000 }, (resHttps) => {
       results.https = { success: true, statusCode: resHttps.statusCode };
       resolve();
-    }).on('error', (err) => {
+    });
+    
+    req.on('error', (err) => {
       results.https = { success: false, error: err.message || err };
+      resolve();
+    });
+    
+    req.on('timeout', () => {
+      req.destroy();
+      results.https = { success: false, error: 'Connection timed out (3s)' };
       resolve();
     });
   });
 
-  // 3. Connection using Node.js global 'fetch' (undici)
+  // 3. Connection using Node.js global 'fetch' (undici) with 3s timeout
   try {
-    const fetchRes = await fetch('https://api.telegram.org/', { method: 'HEAD' });
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 3000);
+    const fetchRes = await fetch('https://api.telegram.org/', { 
+      method: 'HEAD',
+      signal: controller.signal
+    });
+    clearTimeout(id);
     results.fetch = { success: true, statusCode: fetchRes.status };
   } catch (err: any) {
     results.fetch = { 
       success: false, 
-      error: err.message || err, 
+      error: err.name === 'AbortError' ? 'Fetch timed out (3s)' : err.message || err, 
       cause: err.cause?.message || err.cause || null 
     };
   }
