@@ -217,7 +217,7 @@ const worker = new Worker(
         message: notificationMessage,
         metadata: { postId: post.id, successCount, failedCount }
       }
-    }).catch(err => logger.error(`Failed to create notification: ${err}`));
+    }).catch((err: any) => logger.error(`Failed to create notification: ${err}`));
 
     // Dispatch webhook event
     const eventName = finalStatus === PostStatus.FAILED ? 'post.failed' : 'post.sent';
@@ -228,7 +228,7 @@ const worker = new Worker(
       sentAt: new Date().toISOString(),
       successCount,
       failedCount,
-      targets: post.targets.map(t => ({
+      targets: post.targets.map((t: any) => ({
         channelId: t.channel.chatId,
         channelName: t.channel.name,
         status: t.status,

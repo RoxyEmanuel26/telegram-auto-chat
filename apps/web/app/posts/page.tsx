@@ -10,6 +10,7 @@ import {
   CheckCircle, AlertCircle, AlertTriangle, FileText, Bot, X 
 } from 'lucide-react';
 import { PostStatus, TargetStatus } from 'shared';
+import DOMPurify from 'dompurify';
 
 interface PostData {
   id: string;
@@ -224,7 +225,7 @@ export default function PostsPage() {
                   <span className="text-[10px] font-bold text-slate-500 uppercase">Isi Pesan</span>
                   <div 
                     className="text-slate-300 leading-relaxed text-[11px]"
-                    dangerouslySetInnerHTML={{ __html: detailData.post.content }}
+                    dangerouslySetInnerHTML={{ __html: typeof window !== 'undefined' ? DOMPurify.sanitize(detailData.post.content) : detailData.post.content }}
                   />
                 </div>
 

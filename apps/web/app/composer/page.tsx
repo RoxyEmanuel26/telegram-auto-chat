@@ -294,13 +294,16 @@ function ComposerContent() {
 
     // Replace variables in content before sending
     let finalizedContent = editor?.getHTML() || '';
-    Object.entries(variableValues).forEach(([key, val]) => {
+    let hasEmptyVar = false;
+    for (const [key, val] of Object.entries(variableValues)) {
       if (!val) {
         toast.error(`Harap isi nilai variabel [${key}]`);
-        return;
+        hasEmptyVar = true;
+        break;
       }
       finalizedContent = finalizedContent.replaceAll(`{{${key}}}`, val);
-    });
+    }
+    if (hasEmptyVar) return;
 
     // Structure inline keyboard markup
     const inlineKeyboard: any = { inline_keyboard: [] };

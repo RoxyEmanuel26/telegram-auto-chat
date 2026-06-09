@@ -12,13 +12,13 @@ export const dispatchWebhook = async (botId: string, event: string, payload: any
     });
 
     // Subscribed events check
-    const filteredWebhooks = webhooks.filter(w => w.events.includes(event));
+    const filteredWebhooks = webhooks.filter((w: any) => w.events.includes(event));
 
     if (filteredWebhooks.length === 0) return;
 
     logger.info(`Dispatching webhook event "${event}" to ${filteredWebhooks.length} subscribers`);
 
-    const promises = filteredWebhooks.map(async (webhook) => {
+    const promises = filteredWebhooks.map(async (webhook: any) => {
       const body = JSON.stringify({
         event,
         timestamp: new Date().toISOString(),

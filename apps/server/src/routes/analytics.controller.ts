@@ -31,7 +31,7 @@ export const getAnalyticsSummary = async (req: Request, res: Response): Promise<
       by: ['status'],
       _count: { id: true }
     });
-    const postsByStatus = statusCounts.reduce((acc, curr) => {
+    const postsByStatus = statusCounts.reduce((acc: any, curr: any) => {
       acc[curr.status] = curr._count.id;
       return acc;
     }, {} as Record<string, number>);
@@ -57,7 +57,7 @@ export const getAnalyticsSummary = async (req: Request, res: Response): Promise<
       activityTrend[dateStr] = { total: 0, sent: 0 };
     }
 
-    postsRecent.forEach(post => {
+    postsRecent.forEach((post: any) => {
       const dateStr = new Date(post.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' });
       if (activityTrend[dateStr]) {
         activityTrend[dateStr].total++;
@@ -108,7 +108,7 @@ export const getChannelPerformance = async (req: Request, res: Response): Promis
       }
     });
 
-    const performance = await Promise.all(channels.map(async (channel) => {
+    const performance = await Promise.all(channels.map(async (channel: any) => {
       const totalPostAttempts = channel._count.postTargets;
       
       const successfulPosts = await prisma.postTarget.count({

@@ -47,7 +47,7 @@ export const runSchedulerCheck = async (): Promise<void> => {
         }
 
         // 2. Run everything in a single transaction to prevent double spawn race condition if server crashes
-        const newPost = await prisma.$transaction(async (tx) => {
+        const newPost = await prisma.$transaction(async (tx: any) => {
           const createdPost = await tx.post.create({
             data: {
               title: `${parentPost.title} (Recurring Run)`,
@@ -67,7 +67,7 @@ export const runSchedulerCheck = async (): Promise<void> => {
           });
 
           // Create corresponding Targets
-          const targetData = parentPost.targets.map(target => ({
+          const targetData = parentPost.targets.map((target: any) => ({
             postId: createdPost.id,
             channelId: target.channelId,
             status: TargetStatus.PENDING

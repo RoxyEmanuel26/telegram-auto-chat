@@ -43,7 +43,7 @@ export const createPost = async (req: Request, res: Response): Promise<void> => 
     }
 
     // Create Post and Targets within a Prisma Transaction
-    const post = await prisma.$transaction(async (tx) => {
+    const post = await prisma.$transaction(async (tx: any) => {
       // 1. Create the Post
       const newPost = await tx.post.create({
         data: {
@@ -307,8 +307,8 @@ export const retryFailedTargets = async (req: Request, res: Response): Promise<v
 
     // Reset failed targets back to PENDING
     const failedTargetIds = post.targets
-      .filter(t => t.status === TargetStatus.FAILED)
-      .map(t => t.id);
+      .filter((t: any) => t.status === TargetStatus.FAILED)
+      .map((t: any) => t.id);
 
     if (failedTargetIds.length === 0) {
       res.status(400).json({ error: 'Tidak ada target pengiriman yang gagal untuk di-retry' });

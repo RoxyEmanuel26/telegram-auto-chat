@@ -140,107 +140,238 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
     let failedRows = 0;
     const errorLogs: Array<{ row: number; error: string }> = [];
 
-    // Process each row
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const rowNum = i + 1;
-
+    if (importMode === 'ATOMIC') {
+      const postsToQueue: Array<{ id: string; status: PostStatus; scheduledAt: Date | null }> = [];
       try {
-        // Extract fields using mapping indexes
-        const title = row[Number(mapping.title)]?.trim();
-        const content = row[Number(mapping.content)]?.trim();
-        const channelsStr = row[Number(mapping.channels)]?.trim();
-        const scheduledAtStr = mapping.scheduledAt !== undefined ? row[Number(mapping.scheduledAt)]?.trim() : undefined;
+        await prisma.$transaction(async (tx: any) => {
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowNum = i + 1;
 
-        if (!title || !content || !channelsStr) {
-          throw new Error('Kolom Title, Content, atau Target Channels kosong');
-        }
+            // Extract fields using mapping indexes
+            const title = row[Number(mapping.title)]?.trim();
+            const content = row[Number(mapping.content)]?.trim();
+            const channelsStr = row[Number(mapping.channels)]?.trim();
+            const scheduledAtStr = mapping.scheduledAt !== undefined ? row[Number(mapping.scheduledAt)]?.trim() : undefined;
 
-        // Parse channels
-        const channelIdsOrUsernames = channelsStr.split(',').map(c => c.trim()).filter(c => c.length > 0);
-        if (channelIdsOrUsernames.length === 0) {
-          throw new Error('Target channel tidak didefinisikan');
-        }
-
-        // Find channel records in the pre-fetched map (0 query cost)
-        const channels = channelIdsOrUsernames
-          .map(idOrUsername => channelMap.get(idOrUsername))
-          .filter((c): c is any => !!c);
-
-        if (channels.length === 0) {
-          throw new Error(`Target channel tidak ditemukan di database (${channelsStr})`);
-        }
-
-        // Parse scheduled time if provided
-        let scheduledAt: Date | null = null;
-        let postStatus = PostStatus.DRAFT;
-
-        if (scheduledAtStr) {
-          const parsedDate = new Date(scheduledAtStr);
-          if (isNaN(parsedDate.getTime())) {
-            throw new Error(`Format tanggal tidak valid: ${scheduledAtStr}`);
-          }
-          scheduledAt = parsedDate;
-          postStatus = PostStatus.SCHEDULED;
-        } else {
-          if (defaultBehavior === 'SEND_IMMEDIATE') {
-            postStatus = PostStatus.QUEUED;
-          } else if (defaultBehavior === 'SCHEDULED') {
-            throw new Error('Mode default terjadwal dipilih tetapi tanggal scheduledAt di CSV kosong');
-          }
-        }
-
-        // Create the post
-        const post = await prisma.$transaction(async (tx) => {
-          const newPost = await tx.post.create({
-            data: {
-              title,
-              content,
-              botId,
-              status: postStatus,
-              scheduledAt,
-              authorId: req.user!.id,
+            if (!title || !content || !channelsStr) {
+              throw new Error(`Kolom Title, Content, atau Target Channels kosong`);
             }
-          });
 
-          const targetData = channels.map(ch => ({
-            postId: newPost.id,
-            channelId: ch.id,
-            status: TargetStatus.PENDING
-          }));
+            // Parse channels
+            const channelIdsOrUsernames = channelsStr.split(',').map(c => c.trim()).filter(c => c.length > 0);
+            if (channelIdsOrUsernames.length === 0) {
+              throw new Error(`Target channel tidak didefinisikan`);
+            }
 
-          await tx.postTarget.createMany({
-            data: targetData
-          });
+            // Find channel records in the pre-fetched map
+            const channels = channelIdsOrUsernames
+              .map(idOrUsername => channelMap.get(idOrUsername))
+              .filter((c): c is any => !!c);
 
-          return newPost;
+            if (channels.length === 0) {
+              throw new Error(`Target channel tidak ditemukan di database (${channelsStr})`);
+            }
+
+            // Parse scheduled time if provided
+            let scheduledAt: Date | null = null;
+            let postStatus = PostStatus.DRAFT;
+
+            if (scheduledAtStr) {
+              const parsedDate = new Date(scheduledAtStr);
+              if (isNaN(parsedDate.getTime())) {
+                throw new Error(`Format tanggal tidak valid: ${scheduledAtStr}`);
+              }
+              scheduledAt = parsedDate;
+              postStatus = PostStatus.SCHEDULED;
+            } else {
+              if (defaultBehavior === 'SEND_IMMEDIATE') {
+                postStatus = PostStatus.QUEUED;
+              } else if (defaultBehavior === 'SCHEDULED') {
+                throw new Error(`Mode default terjadwal dipilih tetapi tanggal scheduledAt di CSV kosong`);
+              }
+            }
+
+            // Create the post
+            const newPost = await tx.post.create({
+              data: {
+                title,
+                content,
+                botId,
+                status: postStatus,
+                scheduledAt,
+                authorId: req.user!.id,
+              }
+            });
+
+            const targetData = channels.map(ch => ({
+              postId: newPost.id,
+              channelId: ch.id,
+              status: TargetStatus.PENDING
+            }));
+
+            await tx.postTarget.createMany({
+              data: targetData
+            });
+
+            postsToQueue.push({ id: newPost.id, status: postStatus, scheduledAt });
+          }
         });
 
-        // Queue immediate or delayed broadcast job
-        if (postStatus === PostStatus.QUEUED) {
-          await broadcastQueue.add('broadcast-job', { postId: post.id }, { jobId: post.id });
-        } else if (postStatus === PostStatus.SCHEDULED && scheduledAt) {
-          const delay = scheduledAt.getTime() - Date.now();
-          if (delay > 0) {
-            await broadcastQueue.add('broadcast-job', { postId: post.id }, { delay, jobId: post.id });
-          } else {
-            // Send immediately if past
-            await prisma.post.update({
-              where: { id: post.id },
-              data: { status: PostStatus.QUEUED }
-            });
+        // Queue immediate or delayed broadcast jobs only after transaction commits successfully
+        for (const post of postsToQueue) {
+          if (post.status === PostStatus.QUEUED) {
             await broadcastQueue.add('broadcast-job', { postId: post.id }, { jobId: post.id });
+          } else if (post.status === PostStatus.SCHEDULED && post.scheduledAt) {
+            const delay = post.scheduledAt.getTime() - Date.now();
+            if (delay > 0) {
+              await broadcastQueue.add('broadcast-job', { postId: post.id }, { delay, jobId: post.id });
+            } else {
+              // Send immediately if past
+              await prisma.post.update({
+                where: { id: post.id },
+                data: { status: PostStatus.QUEUED }
+              });
+              await broadcastQueue.add('broadcast-job', { postId: post.id }, { jobId: post.id });
+            }
           }
         }
 
-        successRows++;
+        successRows = rows.length;
       } catch (err: any) {
-        failedRows++;
-        errorLogs.push({ row: rowNum, error: err.message || 'Error tidak diketahui' });
-        
-        if (importMode === 'ATOMIC') {
-          // If atomic mode, abort and throw error to cancel entire import
-          throw new Error(`Import dibatalkan di baris ke-${rowNum}: ${err.message}`);
+        failedRows = rows.length;
+        errorLogs.push({ row: 0, error: err.message || 'Import ATOMIC gagal' });
+
+        await prisma.bulkImport.update({
+          where: { id: bulkImport.id },
+          data: {
+            processedRows: rows.length,
+            successRows: 0,
+            failedRows: rows.length,
+            status: ImportStatus.FAILED,
+            errorLog: JSON.parse(JSON.stringify(errorLogs)),
+            completedAt: new Date()
+          }
+        });
+
+        await logAction(
+          req.user.id,
+          'CSV_IMPORT_COMPLETE',
+          'BulkImport',
+          bulkImport.id,
+          null,
+          { successRows: 0, failedRows: rows.length, status: ImportStatus.FAILED },
+          req.ip,
+          req.headers['user-agent']
+        );
+
+        res.status(400).json({
+          error: err.message || 'Terjadi kesalahan saat memproses import mode ATOMIC',
+          total: rows.length,
+          success: 0,
+          failed: rows.length,
+          errors: errorLogs
+        });
+        return;
+      }
+    } else {
+      // PARTIAL mode: each row runs in its own transaction
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNum = i + 1;
+
+        try {
+          // Extract fields using mapping indexes
+          const title = row[Number(mapping.title)]?.trim();
+          const content = row[Number(mapping.content)]?.trim();
+          const channelsStr = row[Number(mapping.channels)]?.trim();
+          const scheduledAtStr = mapping.scheduledAt !== undefined ? row[Number(mapping.scheduledAt)]?.trim() : undefined;
+
+          if (!title || !content || !channelsStr) {
+            throw new Error('Kolom Title, Content, atau Target Channels kosong');
+          }
+
+          // Parse channels
+          const channelIdsOrUsernames = channelsStr.split(',').map(c => c.trim()).filter(c => c.length > 0);
+          if (channelIdsOrUsernames.length === 0) {
+            throw new Error('Target channel tidak didefinisikan');
+          }
+
+          // Find channel records in the pre-fetched map (0 query cost)
+          const channels = channelIdsOrUsernames
+            .map(idOrUsername => channelMap.get(idOrUsername))
+            .filter((c): c is any => !!c);
+
+          if (channels.length === 0) {
+            throw new Error(`Target channel tidak ditemukan di database (${channelsStr})`);
+          }
+
+          // Parse scheduled time if provided
+          let scheduledAt: Date | null = null;
+          let postStatus = PostStatus.DRAFT;
+
+          if (scheduledAtStr) {
+            const parsedDate = new Date(scheduledAtStr);
+            if (isNaN(parsedDate.getTime())) {
+              throw new Error(`Format tanggal tidak valid: ${scheduledAtStr}`);
+            }
+            scheduledAt = parsedDate;
+            postStatus = PostStatus.SCHEDULED;
+          } else {
+            if (defaultBehavior === 'SEND_IMMEDIATE') {
+              postStatus = PostStatus.QUEUED;
+            } else if (defaultBehavior === 'SCHEDULED') {
+              throw new Error('Mode default terjadwal dipilih tetapi tanggal scheduledAt di CSV kosong');
+            }
+          }
+
+          // Create the post
+          const post = await prisma.$transaction(async (tx: any) => {
+            const newPost = await tx.post.create({
+              data: {
+                title,
+                content,
+                botId,
+                status: postStatus,
+                scheduledAt,
+                authorId: req.user!.id,
+              }
+            });
+
+            const targetData = channels.map(ch => ({
+              postId: newPost.id,
+              channelId: ch.id,
+              status: TargetStatus.PENDING
+            }));
+
+            await tx.postTarget.createMany({
+              data: targetData
+            });
+
+            return newPost;
+          });
+
+          // Queue immediate or delayed broadcast job
+          if (postStatus === PostStatus.QUEUED) {
+            await broadcastQueue.add('broadcast-job', { postId: post.id }, { jobId: post.id });
+          } else if (postStatus === PostStatus.SCHEDULED && scheduledAt) {
+            const delay = scheduledAt.getTime() - Date.now();
+            if (delay > 0) {
+              await broadcastQueue.add('broadcast-job', { postId: post.id }, { delay, jobId: post.id });
+            } else {
+              // Send immediately if past
+              await prisma.post.update({
+                where: { id: post.id },
+                data: { status: PostStatus.QUEUED }
+              });
+              await broadcastQueue.add('broadcast-job', { postId: post.id }, { jobId: post.id });
+            }
+          }
+
+          successRows++;
+        } catch (err: any) {
+          failedRows++;
+          errorLogs.push({ row: rowNum, error: err.message || 'Error tidak diketahui' });
         }
       }
     }

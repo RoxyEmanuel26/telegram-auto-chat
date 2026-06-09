@@ -345,7 +345,7 @@ export default function TemplatesPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 {/* Category Selector */}
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-slate-300 block">Kategori</label>
@@ -372,6 +372,20 @@ export default function TemplatesPage() {
                     <option value={MediaType.PHOTO}>Foto</option>
                     <option value={MediaType.VIDEO}>Video</option>
                     <option value={MediaType.DOCUMENT}>Dokumen</option>
+                  </select>
+                </div>
+
+                {/* Parse Mode Selector */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-300 block">Mode Parsing</label>
+                  <select
+                    value={parseMode}
+                    onChange={(e) => setParseMode(e.target.value as ParseMode)}
+                    className="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-xl px-4 py-3 text-sm focus:outline-none"
+                  >
+                    <option value={ParseMode.MARKDOWN}>Markdown</option>
+                    <option value={ParseMode.HTML}>HTML</option>
+                    <option value={ParseMode.PLAIN}>Plain Text</option>
                   </select>
                 </div>
               </div>

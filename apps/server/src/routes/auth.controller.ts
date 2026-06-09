@@ -500,7 +500,7 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
       take: 10
     });
 
-    const sessions = logs.map(log => ({
+    const sessions = logs.map((log: any) => ({
       id: log.id,
       loginAt: log.createdAt,
       ipAddress: log.ipAddress,
