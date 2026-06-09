@@ -55,7 +55,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row">
       {/* Mobile Top Bar */}
-      <div className="md:hidden bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0">
+      <div className="relative z-20 md:hidden bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0">
         <div className="flex items-center space-x-3">
           <svg viewBox="0 0 100 100" className="w-8 h-8 fill-none stroke-primary" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round">
             <path d="M15 50 L85 20 L55 85 L45 55 Z" stroke="url(#mobile-logo-grad)" strokeWidth="8" />
@@ -157,7 +157,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         {/* Desktop Header */}
-        <header className="hidden md:flex bg-slate-900/40 backdrop-blur border-b border-slate-800/65 px-10 py-4 items-center justify-between shrink-0">
+        <header className="relative z-20 hidden md:flex bg-slate-900/40 backdrop-blur border-b border-slate-800/65 px-10 py-4 items-center justify-between shrink-0">
           <div className="text-slate-500 text-xs font-semibold">
             Telehub Broadcast Command Center
           </div>
