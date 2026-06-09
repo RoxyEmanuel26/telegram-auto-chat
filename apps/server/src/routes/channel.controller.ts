@@ -36,6 +36,12 @@ export const addChannel = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
+    let targetChatId = String(chatId).trim();
+    // Automatically prepend '@' for public channel/group usernames if the user forgot it
+    if (!targetChatId.startsWith('-') && isNaN(Number(targetChatId)) && !targetChatId.startsWith('@')) {
+      targetChatId = `@${targetChatId}`;
+    }
+
     // 1. Fetch bot and decrypt token
     const bot = await prisma.telegramBot.findUnique({
       where: { id: botId }
@@ -49,7 +55,7 @@ export const addChannel = async (req: Request, res: Response): Promise<void> => 
     const token = decrypt(bot.token);
 
     // 2. Fetch Chat details from Telegram API
-    const chatRes = await fetch(`https://api.telegram.org/bot${token}/getChat?chat_id=${chatId}`);
+    const chatRes = await fetch(`https://api.telegram.org/bot${token}/getChat?chat_id=${targetChatId}`);
     const chatData = await chatRes.json();
 
     if (!chatData.ok) {
@@ -72,13 +78,13 @@ export const addChannel = async (req: Request, res: Response): Promise<void> => 
     // 3. Fetch Member count
     let memberCount = 0;
     try {
-      const memberCountRes = await fetch(`https://api.telegram.org/bot${token}/getChatMemberCount?chat_id=${chatId}`);
+      const memberCountRes = await fetch(`https://api.telegram.org/bot${token}/getChatMemberCount?chat_id=${targetChatId}`);
       const memberCountData = await memberCountRes.json();
       if (memberCountData.ok) {
         memberCount = memberCountData.result;
       }
     } catch (err) {
-      logger.warn(`Failed to fetch member count for chat ${chatId}: ${err}`);
+      logger.warn(`Failed to fetch member count for chat ${targetChatId}: ${err}`);
     }
 
     // 4. Save/upsert channel in DB
