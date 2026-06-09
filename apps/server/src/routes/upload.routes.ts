@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -6,6 +6,17 @@ import { authenticateJWT, requireRole } from '../middleware/auth.middleware';
 import { UserRole } from 'shared';
 
 const router = Router();
+
+// Helper to determine the public URL of the server (e.g. under Hugging Face Space reverse proxy)
+const getPublicUrl = (req: Request): string => {
+  if (process.env.PUBLIC_URL) {
+    return process.env.PUBLIC_URL;
+  }
+  if (process.env.SPACE_HOST) {
+    return `https://${process.env.SPACE_HOST}`;
+  }
+  return `${req.protocol}://${req.get('host')}`;
+};
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
 
 // Ensure upload directory exists
@@ -67,7 +78,8 @@ router.post(
       return;
     }
 
-    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const baseUrl = getPublicUrl(req);
+    const fileUrl = `${baseUrl}/uploads/${req.file.filename}`;
     res.status(200).json({
       message: 'File berhasil diupload',
       url: fileUrl,

@@ -52,6 +52,13 @@ interface KeyboardButton {
   url: string;
 }
 
+const getFullMediaUrl = (url: string) => {
+  if (!url) return '';
+  if (url.startsWith('http')) return url;
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').replace('/api', '');
+  return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
 function ComposerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -802,9 +809,32 @@ function ComposerContent() {
         <div className="bg-slate-950 border border-slate-850 rounded-3xl p-5 shadow-2xl space-y-4 font-sans text-xs bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]">
           {/* Mock Header info */}
           <div className="flex items-center space-x-3 border-b border-slate-850 pb-3">
-            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300">
-              {selectedBot ? selectedBot.name.charAt(0).toUpperCase() : '?'}
-            </div>
+            {selectedBot?.avatarUrl ? (
+              <div className="relative w-8 h-8 shrink-0">
+                <img
+                  src={selectedBot.avatarUrl.startsWith('http') ? selectedBot.avatarUrl : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}${selectedBot.avatarUrl}`}
+                  alt={selectedBot.name}
+                  className="w-8 h-8 rounded-full object-cover border border-slate-800"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                    const sibling = (e.currentTarget as HTMLImageElement).nextElementSibling;
+                    if (sibling) {
+                      (sibling as HTMLElement).style.display = 'flex';
+                    }
+                  }}
+                />
+                <div 
+                  className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300 text-sm"
+                  style={{ display: 'none' }}
+                >
+                  {selectedBot.name.charAt(0).toUpperCase()}
+                </div>
+              </div>
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300 text-sm">
+                {selectedBot ? selectedBot.name.charAt(0).toUpperCase() : '?'}
+              </div>
+            )}
             <div>
               <div className="flex items-center space-x-1">
                 <span className="font-bold text-white text-xs">{selectedBot ? selectedBot.name : 'Nama Bot'}</span>
@@ -816,9 +846,32 @@ function ComposerContent() {
 
           {/* Chat message bubble container */}
           <div className="flex items-start space-x-2.5">
-            <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-400 shrink-0 text-[10px]">
-              {selectedBot ? selectedBot.name.charAt(0).toUpperCase() : '?'}
-            </div>
+            {selectedBot?.avatarUrl ? (
+              <div className="relative w-7 h-7 shrink-0">
+                <img
+                  src={selectedBot.avatarUrl.startsWith('http') ? selectedBot.avatarUrl : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}${selectedBot.avatarUrl}`}
+                  alt={selectedBot.name}
+                  className="w-7 h-7 rounded-full object-cover border border-slate-800"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                    const sibling = (e.currentTarget as HTMLImageElement).nextElementSibling;
+                    if (sibling) {
+                      (sibling as HTMLElement).style.display = 'flex';
+                    }
+                  }}
+                />
+                <div 
+                  className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-400 text-[10px]"
+                  style={{ display: 'none' }}
+                >
+                  {selectedBot.name.charAt(0).toUpperCase()}
+                </div>
+              </div>
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-400 shrink-0 text-[10px]">
+                {selectedBot ? selectedBot.name.charAt(0).toUpperCase() : '?'}
+              </div>
+            )}
             
             <div className="space-y-2 flex-1 max-w-[85%]">
               {/* Chat bubble body */}
@@ -828,10 +881,10 @@ function ComposerContent() {
                 {mediaType !== MediaType.NONE && mediaUrl && (
                   <div className="rounded-xl overflow-hidden bg-black/30 border border-slate-800 max-h-48 flex items-center justify-center">
                     {mediaType === MediaType.PHOTO && (
-                      <img src={mediaUrl} alt="Preview Attachment" className="object-cover w-full max-h-48" />
+                      <img src={getFullMediaUrl(mediaUrl)} alt="Preview Attachment" className="object-cover w-full max-h-48" />
                     )}
                     {mediaType === MediaType.VIDEO && (
-                      <video src={mediaUrl} controls className="object-cover w-full max-h-48" />
+                      <video src={getFullMediaUrl(mediaUrl)} controls className="object-cover w-full max-h-48" />
                     )}
                     {mediaType === MediaType.DOCUMENT && (
                       <div className="p-4 flex items-center space-x-2 text-slate-400">
