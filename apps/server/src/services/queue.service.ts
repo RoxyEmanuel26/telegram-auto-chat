@@ -16,27 +16,65 @@ const escapeHtml = (text: string): string => {
     .replace(/>/g, '&gt;');
 };
 
+// Helper: Decode common HTML entities (excluding &lt;, &gt;, &amp;)
+const decodeHtmlEntities = (str: string): string => {
+  const entities: Record<string, string> = {
+    nbsp: ' ',
+    quot: '"',
+    apos: "'",
+    cent: '¢',
+    pound: '£',
+    yen: '¥',
+    euro: '€',
+    copy: '©',
+    reg: '®',
+    trade: '™',
+    deg: '°',
+    middot: '•',
+    bull: '•',
+    ndash: '–',
+    mdash: '—',
+    ldquo: '“',
+    rdquo: '”',
+    lsquo: '‘',
+    rsquo: '’'
+  };
+  return str.replace(/&([a-z0-9]+);/gi, (match, entity) => {
+    const ent = entity.toLowerCase();
+    if (ent === 'lt' || ent === 'gt' || ent === 'amp') {
+      return match;
+    }
+    return entities[ent] !== undefined ? entities[ent] : ' ';
+  });
+};
+
 // Helper: Clean and format HTML to Telegram's supported tag list
 const cleanHtmlForTelegram = (html: string): string => {
   if (!html) return '';
   let clean = html;
   
-  // Convert headers: <h1>...</h1> -> <b>...</b>\n
+  // 1. Decode HTML entities (e.g. &nbsp; -> space)
+  clean = decodeHtmlEntities(clean);
+
+  // 2. Protect spoiler spans by converting to placeholder <tgspoiler>
+  clean = clean.replace(/<span\s+[^>]*class=["']tg-spoiler["'][^>]*>/gi, '<tgspoiler>');
+
+  // 3. Convert headers: <h1>...</h1> -> <b>...</b>\n
   clean = clean.replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '<b>$1</b>\n');
   
-  // Convert lists: <li>...</li> -> • ...\n
+  // 4. Convert lists: <li>...</li> -> • ...\n
   clean = clean.replace(/<li[^>]*>(.*?)<\/li>/gi, '• $1\n');
   clean = clean.replace(/<\/?(ul|ol)[^>]*>/gi, '');
   
-  // Convert paragraph blocks:
+  // 5. Convert paragraph blocks:
   clean = clean.replace(/<p[^>]*>/gi, '');
   clean = clean.replace(/<\/p>/gi, '\n');
   
-  // Convert line breaks:
+  // 6. Convert line breaks:
   clean = clean.replace(/<br\s*\/?>/gi, '\n');
   
-  // Strip attributes except href on <a> and class="tg-spoiler" on <span>
-  clean = clean.replace(/<([a-z0-9]+)(?:\s+[^>]*?)(\/?)>/gi, (match, tag, selfClosing) => {
+  // 7. Strip all opening tags except allowed ones, and strip attributes
+  clean = clean.replace(/<([a-z0-9]+)(?:\s+[^>]*?)?(\/?)>/gi, (match, tag, selfClosing) => {
     const tagName = tag.toLowerCase();
     if (tagName === 'a') {
       const hrefMatch = match.match(/\shref=["']([^"']*)["']/i);
@@ -45,19 +83,33 @@ const cleanHtmlForTelegram = (html: string): string => {
       }
       return '<a>';
     }
-    const allowedTags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre', 'span'];
+    const allowedTags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre', 'tgspoiler'];
     if (allowedTags.includes(tagName)) {
-      if (tagName === 'span') {
-        const classMatch = match.match(/\sclass=["']([^"']*)["']/i);
-        if (classMatch && classMatch[1].includes('tg-spoiler')) {
-          return '<span class="tg-spoiler">';
-        }
-      }
       return `<${tagName}${selfClosing ? '/' : ''}>`;
     }
     return '';
   });
 
+  // 8. Process closing </span> tags to pair them with <tgspoiler>
+  let activeSpoilers = 0;
+  clean = clean.replace(/(<tgspoiler>|<\/span>)/gi, (match) => {
+    if (match.toLowerCase() === '<tgspoiler>') {
+      activeSpoilers++;
+      return '<tgspoiler>';
+    } else {
+      if (activeSpoilers > 0) {
+        activeSpoilers--;
+        return '</tgspoiler>';
+      }
+      return '';
+    }
+  });
+
+  // 9. Rename <tgspoiler> to Telegram-supported <span class="tg-spoiler">
+  clean = clean.replace(/<tgspoiler>/gi, '<span class="tg-spoiler">');
+  clean = clean.replace(/<\/tgspoiler>/gi, '</span>');
+
+  // 10. Strip all other closing tags except allowed ones
   clean = clean.replace(/<\/([a-z0-9]+)>/gi, (match, tag) => {
     const tagName = tag.toLowerCase();
     const allowedTags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre', 'span', 'a'];

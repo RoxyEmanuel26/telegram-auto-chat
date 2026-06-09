@@ -119,3 +119,13 @@ body {
   background: linear-gradient(-45deg, #0f172a, #1e293b, #0088cc, #0f172a);
   background-size: 400% 400%;
 }
+
+/* Tiptap Editor styling */
+.ProseMirror {
+  min-height: 160px;
+  outline: none;
+  width: 100%;
+}
+.ProseMirror p {
+  margin-bottom: 0.25rem;
+}

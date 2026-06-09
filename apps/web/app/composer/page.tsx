@@ -108,10 +108,19 @@ function ComposerContent() {
     queryFn: () => api.get('/channels'),
   });
 
+  // State to track if editor is empty (to fix the placeholder not disappearing)
+  const [editorEmpty, setEditorEmpty] = useState(true);
+
   // Tiptap Editor Instance
   const editor = useEditor({
     extensions: [StarterKit],
     content: '',
+    onUpdate: ({ editor }) => {
+      setEditorEmpty(editor.isEmpty);
+    },
+    onCreate: ({ editor }) => {
+      setEditorEmpty(editor.isEmpty);
+    }
   });
 
   // Effect: Fetch and pre-fill template if templateId parameter exists
@@ -150,6 +159,7 @@ function ComposerContent() {
 
         // Populate Tiptap editor with raw content
         editor.commands.setContent(template.content);
+        setEditorEmpty(template.content === '' || template.content === '<p></p>');
 
         // Record template usage statistics
         api.post(`/templates/${templateId}/use`, {}).catch(err => {
@@ -508,7 +518,7 @@ function ComposerContent() {
                 onClick={() => editor?.chain().focus().run()}
                 className="p-4 min-h-[160px] text-slate-100 text-sm focus-within:outline-none select-text relative cursor-text"
               >
-                {editor && editor.isEmpty && (
+                {editor && editorEmpty && (
                   <div className="absolute top-4 left-4 text-slate-500 pointer-events-none select-none">
                     Tulis pesan siaran Anda di sini...
                   </div>
