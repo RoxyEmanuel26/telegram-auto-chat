@@ -52,6 +52,13 @@ export default function PostsPage() {
   const { data: postsData, isLoading: postsLoading } = useQuery<{ posts: PostData[] }>({
     queryKey: ['posts'],
     queryFn: () => api.get('/posts'),
+    refetchInterval: (query) => {
+      const posts = query.state.data?.posts;
+      const hasActive = posts?.some(
+        (post: any) => post.status === PostStatus.QUEUED || post.status === PostStatus.SENDING
+      );
+      return hasActive ? 4000 : false;
+    }
   });
 
   // Query: Fetch selected post detail
@@ -59,6 +66,11 @@ export default function PostsPage() {
     queryKey: ['post-detail', selectedPostId],
     queryFn: () => api.get(`/posts/${selectedPostId}`),
     enabled: !!selectedPostId,
+    refetchInterval: (query) => {
+      const post = query.state.data?.post;
+      const isActive = post && (post.status === PostStatus.QUEUED || post.status === PostStatus.SENDING);
+      return isActive ? 4000 : false;
+    }
   });
 
   // Mutation: Retry failed targets
