@@ -181,7 +181,43 @@ const worker = new Worker(
     });
 
     // Decrypt the bot token
-    const token = decrypt(post.bot.token);
+    let token: string;
+    try {
+      token = decrypt(post.bot.token);
+    } catch (err: any) {
+      logger.error(`Decryption failed for bot token of Post ${postId}: ${err}`);
+      
+      // Update targets to FAILED with decryption error
+      await prisma.postTarget.updateMany({
+        where: { postId: post.id, status: TargetStatus.PENDING },
+        data: {
+          status: TargetStatus.FAILED,
+          errorMessage: 'Kesalahan Dekripsi Token Bot: Pastikan ENCRYPTION_KEY server sudah benar, atau hubungkan kembali Bot di pengaturan.'
+        }
+      });
+
+      // Update post status to FAILED
+      await prisma.post.update({
+        where: { id: post.id },
+        data: {
+          status: PostStatus.FAILED,
+          sentAt: new Date()
+        }
+      });
+      
+      // Create notification
+      await prisma.notification.create({
+        data: {
+          userId: post.authorId,
+          type: 'POST_FAILED',
+          title: `Siaran "${post.title}" Gagal`,
+          message: `Gagal mengirim siaran "${post.title}". Kesalahan: Gagal mendekripsi token bot. Pastikan ENCRYPTION_KEY server sudah benar atau hubungkan ulang bot Anda.`,
+          metadata: { postId: post.id, successCount: 0, failedCount: post.targets.length }
+        }
+      }).catch(notifErr => logger.error(`Failed to create notification: ${notifErr}`));
+
+      return;
+    }
 
     // Parse inline keyboard markup
     let replyMarkup: any = undefined;

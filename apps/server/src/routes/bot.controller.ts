@@ -160,9 +160,9 @@ export const testConnection = async (req: Request, res: Response): Promise<void>
       success: true,
       botInfo: telegramData.result
     });
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`Test bot connection error: ${error}`);
-    res.status(500).json({ error: 'Gagal melakukan tes koneksi bot' });
+    res.status(500).json({ error: `Gagal melakukan tes koneksi bot: ${error.message || error}` });
   }
 };
 

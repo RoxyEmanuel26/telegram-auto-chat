@@ -227,8 +227,8 @@ export const sendTestMessage = async (req: Request, res: Response): Promise<void
       success: true, 
       message: 'Pesan test berhasil dikirim ke Telegram!' 
     });
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`Send test message error: ${error}`);
-    res.status(500).json({ error: 'Gagal mengirim pesan test' });
+    res.status(500).json({ error: `Gagal mengirim pesan test: ${error.message || error}` });
   }
 };
