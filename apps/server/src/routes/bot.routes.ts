@@ -14,6 +14,6 @@ router.use(authenticateJWT);
 router.get('/', getBots);
 router.post('/', requireRole([UserRole.ADMIN, UserRole.EDITOR]), addBot);
 router.post('/:id/test', testConnection);
-router.delete('/:id', requireRole([UserRole.ADMIN]), deleteBot);
+router.delete('/:id', requireRole([UserRole.ADMIN, UserRole.EDITOR]), deleteBot);
 
 export default router;

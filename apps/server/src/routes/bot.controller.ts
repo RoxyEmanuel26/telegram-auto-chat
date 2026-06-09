@@ -197,9 +197,9 @@ export const deleteBot = async (req: Request, res: Response): Promise<void> => {
     await logAuditEvent(req.user.id, 'BOT_DELETE', 'TelegramBot', id, { oldVal: { name: bot.name, username: bot.username } });
 
     res.status(200).json({ message: 'Bot berhasil dihapus' });
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`Delete bot error: ${error}`);
-    res.status(500).json({ error: 'Gagal menghapus bot' });
+    res.status(500).json({ error: `Gagal menghapus bot: ${error.message || error}` });
   }
 };
 
