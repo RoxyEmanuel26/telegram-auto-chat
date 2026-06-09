@@ -7,7 +7,13 @@ import { PostStatus, TargetStatus, MediaType } from 'shared';
 import { dispatchWebhook } from './webhook.service';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
-const TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+let TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+if (TELEGRAM_API_URL && !TELEGRAM_API_URL.startsWith('http://') && !TELEGRAM_API_URL.startsWith('https://')) {
+  TELEGRAM_API_URL = `https://${TELEGRAM_API_URL}`;
+}
+if (TELEGRAM_API_URL.endsWith('/')) {
+  TELEGRAM_API_URL = TELEGRAM_API_URL.slice(0, -1);
+}
 
 // Helper: Escape HTML special characters for plain text captions
 const escapeHtml = (text: string): string => {

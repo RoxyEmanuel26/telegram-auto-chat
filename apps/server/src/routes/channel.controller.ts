@@ -4,7 +4,13 @@ import logger from '../utils/logger';
 import { decrypt } from '../utils/crypto';
 import { ChannelType } from 'shared';
 
-const TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+let TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+if (TELEGRAM_API_URL && !TELEGRAM_API_URL.startsWith('http://') && !TELEGRAM_API_URL.startsWith('https://')) {
+  TELEGRAM_API_URL = `https://${TELEGRAM_API_URL}`;
+}
+if (TELEGRAM_API_URL.endsWith('/')) {
+  TELEGRAM_API_URL = TELEGRAM_API_URL.slice(0, -1);
+}
 
 // Helper to log audit events
 const logAuditEvent = async (userId: string | null, action: string, resource: string, resourceId: string, extra: any = {}) => {

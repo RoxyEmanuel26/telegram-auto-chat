@@ -119,7 +119,13 @@ app.get('/api/health', async (req: Request, res: Response) => {
 // Diagnostic Route for Network Debugging
 app.get('/api/diag', async (req: Request, res: Response) => {
   const results: any = { timestamp: new Date() };
-  const telegramApiUrl = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+  let telegramApiUrl = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+  if (telegramApiUrl && !telegramApiUrl.startsWith('http://') && !telegramApiUrl.startsWith('https://')) {
+    telegramApiUrl = `https://${telegramApiUrl}`;
+  }
+  if (telegramApiUrl.endsWith('/')) {
+    telegramApiUrl = telegramApiUrl.slice(0, -1);
+  }
   results.configuredTelegramApiUrl = telegramApiUrl;
   
   // 1. DNS Lookup for Telegram API (or proxy host)
