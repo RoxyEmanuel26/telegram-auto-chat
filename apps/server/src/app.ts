@@ -34,6 +34,8 @@ import prisma from './utils/prisma';
 import { initScheduler } from './services/scheduler.service';
 
 const app = express();
+// Trust proxy header X-Forwarded-For on cloud hosting platforms (like Hugging Face)
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 
 // Security Middlewares
