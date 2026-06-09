@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { 
-  createTemplate, getTemplates, updateTemplate, 
+  createTemplate, getTemplates, getTemplateDetail, updateTemplate, 
   deleteTemplate, incrementUsage 
 } from './template.controller';
 import { authenticateJWT, requireRole } from '../middleware/auth.middleware';
@@ -12,6 +12,7 @@ const router = Router();
 router.use(authenticateJWT);
 
 router.get('/', getTemplates);
+router.get('/:id', getTemplateDetail);
 router.post('/', requireRole([UserRole.ADMIN, UserRole.EDITOR]), createTemplate);
 router.put('/:id', requireRole([UserRole.ADMIN, UserRole.EDITOR]), updateTemplate);
 router.delete('/:id', requireRole([UserRole.ADMIN, UserRole.EDITOR]), deleteTemplate);

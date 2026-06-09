@@ -82,6 +82,31 @@ export const getTemplates = async (req: Request, res: Response): Promise<void> =
   }
 };
 
+export const getTemplateDetail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const template = await prisma.template.findUnique({
+      where: { id },
+      include: {
+        author: {
+          select: { name: true }
+        }
+      }
+    });
+
+    if (!template) {
+      res.status(404).json({ error: 'Template tidak ditemukan' });
+      return;
+    }
+
+    res.status(200).json({ template, post: template });
+  } catch (error) {
+    logger.error(`Get template detail error: ${error}`);
+    res.status(500).json({ error: 'Gagal mengambil detail template' });
+  }
+};
+
 export const updateTemplate = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;

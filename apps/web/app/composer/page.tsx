@@ -131,8 +131,8 @@ function ComposerContent() {
 
     const fetchTemplate = async () => {
       try {
-        const res = await api.get<{ post: any }>(`/templates/${templateId}`);
-        const template = res.post;
+        const res = await api.get<{ template: any }>(`/templates/${templateId}`);
+        const template = res.template;
 
         setTitle(template.name);
         setRawTemplateContent(template.content);
