@@ -34,6 +34,7 @@ RUN pnpm build
 # Set production environment variables
 ENV NODE_ENV=production
 ENV PORT=7860
+ENV NODE_OPTIONS="--dns-result-order=ipv4first"
 
 EXPOSE 7860
 

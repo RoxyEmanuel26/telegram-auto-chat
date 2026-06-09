@@ -201,7 +201,7 @@ export const sendTestMessage = async (req: Request, res: Response): Promise<void
 
     const token = decrypt(channel.bot.token);
 
-    const testText = `🤖 *TeleHub Broadcast System*\n\nKoneksi berhasil terverifikasi! Bot @${channel.bot.username} terhubung sukses dengan channel ini.`;
+    const testText = `🤖 <b>TeleHub Broadcast System</b>\n\nKoneksi berhasil terverifikasi! Bot @${channel.bot.username} terhubung sukses dengan channel ini.`;
 
     const telegramRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
@@ -209,7 +209,7 @@ export const sendTestMessage = async (req: Request, res: Response): Promise<void
       body: JSON.stringify({
         chat_id: channel.chatId,
         text: testText,
-        parse_mode: 'Markdown'
+        parse_mode: 'HTML'
       })
     });
 

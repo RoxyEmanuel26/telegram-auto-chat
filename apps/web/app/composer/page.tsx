@@ -104,7 +104,7 @@ function ComposerContent() {
   // Tiptap Editor Instance
   const editor = useEditor({
     extensions: [StarterKit],
-    content: '<p>Tulis pesan siaran Anda di sini...</p>',
+    content: '',
   });
 
   // Effect: Fetch and pre-fill template if templateId parameter exists
@@ -162,8 +162,10 @@ function ComposerContent() {
   const getPreviewContent = () => {
     let rawContent = editor?.getHTML() || '';
     
-    // Fallback if editor not loaded
-    if (!rawContent) return 'Tulis pesan Anda...';
+    // Fallback if editor not loaded or empty
+    if (!rawContent || rawContent === '<p></p>' || editor?.isEmpty) {
+      return '<span class="text-slate-500">Tulis pesan siaran Anda di sini...</span>';
+    }
 
     // Replace variables in preview
     Object.entries(variableValues).forEach(([key, val]) => {
@@ -491,7 +493,15 @@ function ComposerContent() {
               )}
 
               {/* Editor Content Area */}
-              <div className="p-4 min-h-[160px] text-slate-100 text-sm focus-within:outline-none select-text">
+              <div 
+                onClick={() => editor?.chain().focus().run()}
+                className="p-4 min-h-[160px] text-slate-100 text-sm focus-within:outline-none select-text relative cursor-text"
+              >
+                {editor && editor.isEmpty && (
+                  <div className="absolute top-4 left-4 text-slate-500 pointer-events-none select-none">
+                    Tulis pesan siaran Anda di sini...
+                  </div>
+                )}
                 <EditorContent editor={editor} />
               </div>
             </div>
