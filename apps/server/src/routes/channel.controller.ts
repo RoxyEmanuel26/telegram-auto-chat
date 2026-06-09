@@ -4,6 +4,8 @@ import logger from '../utils/logger';
 import { decrypt } from '../utils/crypto';
 import { ChannelType } from 'shared';
 
+const TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+
 // Helper to log audit events
 const logAuditEvent = async (userId: string | null, action: string, resource: string, resourceId: string, extra: any = {}) => {
   try {
@@ -54,8 +56,8 @@ export const addChannel = async (req: Request, res: Response): Promise<void> => 
 
     const token = decrypt(bot.token);
 
-    // 2. Fetch Chat details from Telegram API
-    const chatRes = await fetch(`https://api.telegram.org/bot${token}/getChat?chat_id=${targetChatId}`);
+    // 2. Fetch Chat info from Telegram Bot API
+    const chatRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getChat?chat_id=${targetChatId}`);
     const chatData = await chatRes.json();
 
     if (!chatData.ok) {
@@ -78,7 +80,8 @@ export const addChannel = async (req: Request, res: Response): Promise<void> => 
     // 3. Fetch Member count
     let memberCount = 0;
     try {
-      const memberCountRes = await fetch(`https://api.telegram.org/bot${token}/getChatMemberCount?chat_id=${targetChatId}`);
+      // 3. Get member count (optional, fail gracefully to 0)
+      const memberCountRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getChatMemberCount?chat_id=${targetChatId}`);
       const memberCountData = await memberCountRes.json();
       if (memberCountData.ok) {
         memberCount = memberCountData.result;
@@ -203,7 +206,7 @@ export const sendTestMessage = async (req: Request, res: Response): Promise<void
 
     const testText = `🤖 <b>TeleHub Broadcast System</b>\n\nKoneksi berhasil terverifikasi! Bot @${channel.bot.username} terhubung sukses dengan channel ini.`;
 
-    const telegramRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const telegramRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

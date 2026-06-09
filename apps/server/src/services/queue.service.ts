@@ -7,6 +7,7 @@ import { PostStatus, TargetStatus, MediaType } from 'shared';
 import { dispatchWebhook } from './webhook.service';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+const TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
 
 // Helper: Escape HTML special characters for plain text captions
 const escapeHtml = (text: string): string => {
@@ -140,7 +141,7 @@ export const broadcastQueue = new Queue('post-broadcast', {
 
 // Helper: send direct request to Telegram API
 const sendTelegramRequest = async (token: string, method: string, payload: any) => {
-  const url = `https://api.telegram.org/bot${token}/${method}`;
+  const url = `${TELEGRAM_API_URL}/bot${token}/${method}`;
   
   const response = await fetch(url, {
     method: 'POST',

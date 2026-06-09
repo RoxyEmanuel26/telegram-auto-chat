@@ -119,22 +119,31 @@ app.get('/api/health', async (req: Request, res: Response) => {
 // Diagnostic Route for Network Debugging
 app.get('/api/diag', async (req: Request, res: Response) => {
   const results: any = { timestamp: new Date() };
+  const telegramApiUrl = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+  results.configuredTelegramApiUrl = telegramApiUrl;
   
-  // 1. DNS Lookup for Telegram API
+  // 1. DNS Lookup for Telegram API (or proxy host)
+  let hostToLookup = 'api.telegram.org';
+  try {
+    const urlObj = new URL(telegramApiUrl);
+    hostToLookup = urlObj.hostname;
+  } catch (err) {}
+
   await new Promise<void>((resolve) => {
-    dns.lookup('api.telegram.org', (err, address, family) => {
+    dns.lookup(hostToLookup, (err, address, family) => {
       if (err) {
-        results.dns = { success: false, error: err.message || err };
+        results.dns = { host: hostToLookup, success: false, error: err.message || err };
       } else {
-        results.dns = { success: true, address, family };
+        results.dns = { host: hostToLookup, success: true, address, family };
       }
       resolve();
     });
   });
 
-  // 2. HTTP connection using Node.js built-in 'https' module (with 3s timeout)
+  // 2. HTTP connection using Node.js built-in 'https' (with 3s timeout)
   await new Promise<void>((resolve) => {
-    const req = https.get('https://api.telegram.org/', { timeout: 3000 }, (resHttps) => {
+    const targetUrl = telegramApiUrl.endsWith('/') ? telegramApiUrl : (telegramApiUrl + '/');
+    const req = https.get(targetUrl, { timeout: 3000 }, (resHttps) => {
       results.https = { success: true, statusCode: resHttps.statusCode };
       resolve();
     });
@@ -153,10 +162,11 @@ app.get('/api/diag', async (req: Request, res: Response) => {
 
   // 3. Connection using Node.js global 'fetch' (undici) with 3s timeout
   try {
+    const targetUrl = telegramApiUrl.endsWith('/') ? telegramApiUrl : (telegramApiUrl + '/');
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), 3000);
-    const fetchRes = await fetch('https://api.telegram.org/', { 
-      method: 'HEAD',
+    const fetchRes = await fetch(targetUrl, { 
+      method: 'GET',
       signal: controller.signal
     });
     clearTimeout(id);

@@ -4,6 +4,8 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { encrypt, decrypt } from '../utils/crypto';
 
+const TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+
 // Helper to log audit events
 const logAuditEvent = async (userId: string, action: string, resource: string, resourceId: string, extra: any = {}) => {
   try {
@@ -37,7 +39,7 @@ export const addBot = async (req: Request, res: Response): Promise<void> => {
     }
 
     // 1. Verify token with Telegram Bot API
-    const telegramRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const telegramRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getMe`);
     const telegramData = await telegramRes.json();
 
     if (!telegramData.ok) {
@@ -140,7 +142,7 @@ export const testConnection = async (req: Request, res: Response): Promise<void>
     const token = decrypt(bot.token);
 
     // Call Telegram getMe
-    const telegramRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const telegramRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getMe`);
     const telegramData = await telegramRes.json();
 
     if (!telegramData.ok) {
@@ -220,7 +222,7 @@ export const getBotAvatar = async (req: Request, res: Response): Promise<void> =
     const botId = token.split(':')[0];
 
     // 1. Get bot's profile photos
-    const photosRes = await fetch(`https://api.telegram.org/bot${token}/getUserProfilePhotos?user_id=${botId}`);
+    const photosRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getUserProfilePhotos?user_id=${botId}`);
     const photosData: any = await photosRes.json();
 
     if (!photosData.ok || !photosData.result || photosData.result.total_count === 0) {
@@ -234,7 +236,7 @@ export const getBotAvatar = async (req: Request, res: Response): Promise<void> =
     const fileId = photo.file_id;
 
     // 2. Get file path
-    const fileRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+    const fileRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getFile?file_id=${fileId}`);
     const fileData: any = await fileRes.json();
 
     if (!fileData.ok || !fileData.result.file_path) {
@@ -245,7 +247,7 @@ export const getBotAvatar = async (req: Request, res: Response): Promise<void> =
     const filePath = fileData.result.file_path;
 
     // 3. Fetch the image file from Telegram
-    const imageRes = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+    const imageRes = await fetch(`${TELEGRAM_API_URL}/file/bot${token}/${filePath}`);
     
     if (!imageRes.ok) {
       res.status(404).json({ error: 'Gagal mengambil gambar dari Telegram' });
