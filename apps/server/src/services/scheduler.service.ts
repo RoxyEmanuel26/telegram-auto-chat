@@ -33,7 +33,20 @@ export const runSchedulerCheck = async (): Promise<void> => {
       const parentPost = rec.post;
 
       try {
-        // 1. Create duplicated Post record for this run instance
+        // 1. Compute next run date first
+        let nextRunAt = new Date();
+        let nextOccurrenceCount = rec.currentOccurrence + 1;
+        let isMaxedOut = false;
+        let isExpired = false;
+
+        if (rec.cronExpression) {
+          const cronInterval = parser.parseExpression(rec.cronExpression);
+          nextRunAt = cronInterval.next().toDate();
+          isMaxedOut = rec.occurrenceCount !== null && nextOccurrenceCount >= rec.occurrenceCount;
+          isExpired = rec.endDate !== null && nextRunAt > rec.endDate;
+        }
+
+        // 2. Run everything in a single transaction to prevent double spawn race condition if server crashes
         const newPost = await prisma.$transaction(async (tx) => {
           const createdPost = await tx.post.create({
             data: {
@@ -64,37 +77,27 @@ export const runSchedulerCheck = async (): Promise<void> => {
             data: targetData
           });
 
+          // Update recurrence state inside the same transaction
+          await tx.scheduleRecurrence.update({
+            where: { id: rec.id },
+            data: {
+              nextRunAt: rec.cronExpression ? nextRunAt : rec.nextRunAt,
+              currentOccurrence: nextOccurrenceCount,
+              isActive: rec.cronExpression ? (!isMaxedOut && !isExpired) : false
+            }
+          });
+
           return createdPost;
         });
 
-        // 2. Queue immediately
+        // 3. Queue immediately (outside the transaction)
         await broadcastQueue.add('broadcast-job', { postId: newPost.id }, { jobId: newPost.id });
         logger.info(`Successfully spawned recurring instance post ${newPost.id} from parent ${parentPost.id}`);
-
-        // 3. Compute next run date
+        
         if (rec.cronExpression) {
-          const cronInterval = parser.parseExpression(rec.cronExpression);
-          const nextRunAt = cronInterval.next().toDate();
-
-          const nextOccurrenceCount = rec.currentOccurrence + 1;
-          const isMaxedOut = rec.occurrenceCount !== null && nextOccurrenceCount >= rec.occurrenceCount;
-          const isExpired = rec.endDate !== null && nextRunAt > rec.endDate;
-
-          await prisma.scheduleRecurrence.update({
-            where: { id: rec.id },
-            data: {
-              nextRunAt,
-              currentOccurrence: nextOccurrenceCount,
-              isActive: !isMaxedOut && !isExpired
-            }
-          });
           logger.info(`Updated recurrence ${rec.id}: next run scheduled at ${nextRunAt}. Active: ${!isMaxedOut && !isExpired}`);
         } else {
-          // If no cron pattern, deactivate
-          await prisma.scheduleRecurrence.update({
-            where: { id: rec.id },
-            data: { isActive: false }
-          });
+          logger.info(`Deactivated recurrence ${rec.id} (no cron pattern)`);
         }
       } catch (err: any) {
         logger.error(`Error processing recurrence ${rec.id} for post ${parentPost.id}: ${err.message || err}`);
