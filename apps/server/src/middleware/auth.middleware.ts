@@ -61,6 +61,16 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
       twoFactorVerified: decoded.twoFactorVerified ?? false,
     };
 
+    // Prevent 2FA bypass: If 2FA is enabled but not verified, block all routes
+    // except the 2FA verification itself and getMe profile status endpoint.
+    const is2faRoute = req.originalUrl.includes('/verify-2fa') || req.originalUrl.includes('/2fa/verify');
+    const isMeRoute = req.originalUrl.includes('/me') || req.originalUrl.includes('/auth/me');
+    
+    if (req.user.twoFactorEnabled && !req.user.twoFactorVerified && !is2faRoute && !isMeRoute) {
+      res.status(403).json({ error: '2FA verification required' });
+      return;
+    }
+
     next();
   } catch (error) {
     logger.error(`Authentication error: ${error instanceof Error ? error.message : error}`);

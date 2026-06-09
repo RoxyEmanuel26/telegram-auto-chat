@@ -65,7 +65,9 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const filePath = path.join(process.cwd(), 'uploads', filename);
+    // Sanitize filename to prevent Directory Traversal / Arbitrary File Read
+    const safeFilename = path.basename(filename);
+    const filePath = path.join(process.cwd(), 'uploads', safeFilename);
     if (!fs.existsSync(filePath)) {
       res.status(404).json({ error: 'File log import tidak ditemukan' });
       return;
@@ -79,11 +81,43 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
 
     const rows = parsed.data.slice(1) as string[][];
 
+    // Pre-fetch all channels to prevent N+1 queries during loop
+    const uniqueChannelsSet = new Set<string>();
+    for (const row of rows) {
+      const channelsStr = row[Number(mapping.channels)]?.trim();
+      if (channelsStr) {
+        channelsStr.split(',')
+          .map(c => c.trim())
+          .filter(c => c.length > 0)
+          .forEach(c => uniqueChannelsSet.add(c));
+      }
+    }
+    const allChannelIdentifiers = Array.from(uniqueChannelsSet);
+
+    const dbChannels = allChannelIdentifiers.length > 0
+      ? await prisma.telegramChannel.findMany({
+          where: {
+            OR: [
+              { chatId: { in: allChannelIdentifiers } },
+              { username: { in: allChannelIdentifiers } }
+            ]
+          }
+        })
+      : [];
+
+    const channelMap = new Map<string, any>();
+    for (const ch of dbChannels) {
+      channelMap.set(ch.chatId, ch);
+      if (ch.username) {
+        channelMap.set(ch.username, ch);
+      }
+    }
+
     // Create BulkImport record
     const bulkImport = await prisma.bulkImport.create({
       data: {
-        filename,
-        originalName: filename,
+        filename: safeFilename,
+        originalName: safeFilename,
         totalRows: rows.length,
         status: ImportStatus.PROCESSING,
         uploadedById: req.user.id,
@@ -97,7 +131,7 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
       'BulkImport',
       bulkImport.id,
       null,
-      { filename, totalRows: rows.length, botId },
+      { filename: safeFilename, totalRows: rows.length, botId },
       req.ip,
       req.headers['user-agent']
     );
@@ -128,15 +162,10 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
           throw new Error('Target channel tidak didefinisikan');
         }
 
-        // Find channel records in DB
-        const channels = await prisma.telegramChannel.findMany({
-          where: {
-            OR: [
-              { chatId: { in: channelIdsOrUsernames } },
-              { username: { in: channelIdsOrUsernames } }
-            ]
-          }
-        });
+        // Find channel records in the pre-fetched map (0 query cost)
+        const channels = channelIdsOrUsernames
+          .map(idOrUsername => channelMap.get(idOrUsername))
+          .filter((c): c is any => !!c);
 
         if (channels.length === 0) {
           throw new Error(`Target channel tidak ditemukan di database (${channelsStr})`);
