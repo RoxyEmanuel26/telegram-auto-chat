@@ -69,6 +69,14 @@ export const addBot = async (req: Request, res: Response): Promise<void> => {
         description: description || null,
         ownerId: req.user.id,
         isActive: true,
+      }
+    });
+
+    // Update avatarUrl with the relative path
+    const updatedBot = await prisma.telegramBot.update({
+      where: { id: bot.id },
+      data: {
+        avatarUrl: `/bots/${bot.id}/avatar`
       },
       select: {
         id: true,
@@ -76,13 +84,14 @@ export const addBot = async (req: Request, res: Response): Promise<void> => {
         username: true,
         description: true,
         isActive: true,
+        avatarUrl: true,
         createdAt: true
       }
     });
 
     await logAuditEvent(req.user.id, 'BOT_ADD', 'TelegramBot', bot.id, { newVal: { name, username } });
 
-    res.status(201).json({ message: 'Bot berhasil ditambahkan', bot });
+    res.status(201).json({ message: 'Bot berhasil ditambahkan', bot: updatedBot });
   } catch (error: any) {
     logger.error(`Add bot error: ${error}`);
     res.status(500).json({ error: `Terjadi kesalahan internal saat menambahkan bot: ${error.message || error}` });
@@ -191,5 +200,67 @@ export const deleteBot = async (req: Request, res: Response): Promise<void> => {
   } catch (error) {
     logger.error(`Delete bot error: ${error}`);
     res.status(500).json({ error: 'Gagal menghapus bot' });
+  }
+};
+
+export const getBotAvatar = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const bot = await prisma.telegramBot.findUnique({
+      where: { id }
+    });
+
+    if (!bot) {
+      res.status(404).json({ error: 'Bot tidak ditemukan' });
+      return;
+    }
+
+    const token = decrypt(bot.token);
+    const botId = token.split(':')[0];
+
+    // 1. Get bot's profile photos
+    const photosRes = await fetch(`https://api.telegram.org/bot${token}/getUserProfilePhotos?user_id=${botId}`);
+    const photosData: any = await photosRes.json();
+
+    if (!photosData.ok || !photosData.result || photosData.result.total_count === 0) {
+      res.status(404).json({ error: 'Avatar tidak ditemukan' });
+      return;
+    }
+
+    // Get the smallest or medium size photo
+    const photoSizes = photosData.result.photos[0];
+    const photo = photoSizes[1] || photoSizes[0]; // Prefer medium, fallback to smallest
+    const fileId = photo.file_id;
+
+    // 2. Get file path
+    const fileRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+    const fileData: any = await fileRes.json();
+
+    if (!fileData.ok || !fileData.result.file_path) {
+      res.status(404).json({ error: 'File path tidak ditemukan' });
+      return;
+    }
+
+    const filePath = fileData.result.file_path;
+
+    // 3. Fetch the image file from Telegram
+    const imageRes = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+    
+    if (!imageRes.ok) {
+      res.status(404).json({ error: 'Gagal mengambil gambar dari Telegram' });
+      return;
+    }
+
+    const contentType = imageRes.headers.get('content-type') || 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+
+    const arrayBuffer = await imageRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    res.send(buffer);
+  } catch (error: any) {
+    logger.error(`Get bot avatar error: ${error}`);
+    res.status(500).json({ error: `Terjadi kesalahan internal saat mengambil avatar: ${error.message || error}` });
   }
 };

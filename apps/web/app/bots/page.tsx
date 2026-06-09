@@ -195,7 +195,24 @@ export default function BotsPage() {
                 <div className="space-y-4">
                   {/* Top user / avatar info */}
                   <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-extrabold text-lg">
+                    {bot.avatarUrl ? (
+                      <img
+                        src={bot.avatarUrl.startsWith('http') ? bot.avatarUrl : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}${bot.avatarUrl}`}
+                        alt={bot.name}
+                        className="w-12 h-12 rounded-2xl object-cover border border-slate-800"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          const sibling = (e.currentTarget as HTMLImageElement).nextElementSibling;
+                          if (sibling) {
+                            (sibling as HTMLElement).style.display = 'flex';
+                          }
+                        }}
+                      />
+                    ) : null}
+                    <div 
+                      className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-extrabold text-lg"
+                      style={{ display: bot.avatarUrl ? 'none' : 'flex' }}
+                    >
                       {bot.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="overflow-hidden">
