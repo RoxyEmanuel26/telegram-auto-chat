@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { getBotAvatarUrl } from '@/lib/avatar';
 import SidebarLayout from '@/components/layout/SidebarLayout';
 import { toast } from 'sonner';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -871,7 +872,7 @@ function ComposerContent() {
             {selectedBot?.avatarUrl ? (
               <div className="relative w-8 h-8 shrink-0">
                 <img
-                  src={selectedBot.avatarUrl.startsWith('http') ? selectedBot.avatarUrl : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}${selectedBot.avatarUrl}`}
+                  src={getBotAvatarUrl(selectedBot.avatarUrl) || undefined}
                   alt={selectedBot.name}
                   className="w-8 h-8 rounded-full object-cover border border-slate-800"
                   onError={(e) => {
@@ -908,7 +909,7 @@ function ComposerContent() {
             {selectedBot?.avatarUrl ? (
               <div className="relative w-7 h-7 shrink-0">
                 <img
-                  src={selectedBot.avatarUrl.startsWith('http') ? selectedBot.avatarUrl : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}${selectedBot.avatarUrl}`}
+                  src={getBotAvatarUrl(selectedBot.avatarUrl) || undefined}
                   alt={selectedBot.name}
                   className="w-7 h-7 rounded-full object-cover border border-slate-800"
                   onError={(e) => {

@@ -3,6 +3,8 @@ import { UserRole } from 'shared';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { encrypt, decrypt } from '../utils/crypto';
+import fs from 'fs';
+import path from 'path';
 
 let TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
 if (TELEGRAM_API_URL && !TELEGRAM_API_URL.startsWith('http://') && !TELEGRAM_API_URL.startsWith('https://')) {
@@ -27,6 +29,67 @@ const logAuditEvent = async (userId: string, action: string, resource: string, r
     });
   } catch (err) {
     logger.error(`Audit log creation failed: ${err}`);
+  }
+};
+
+// Ensure uploads/avatars directory exists
+const AVATAR_DIR = path.join(process.cwd(), 'uploads', 'avatars');
+if (!fs.existsSync(AVATAR_DIR)) {
+  fs.mkdirSync(AVATAR_DIR, { recursive: true });
+}
+
+/**
+ * Fetch the Telegram bot's profile photo and cache it locally as a file.
+ * Returns the relative URL path to the cached avatar, or null if no photo found.
+ */
+const fetchAndCacheBotAvatar = async (token: string, botDbId: string): Promise<string | null> => {
+  try {
+    const botUserId = token.split(':')[0];
+
+    // 1. Get bot's profile photos from Telegram
+    const photosRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getUserProfilePhotos?user_id=${botUserId}`);
+    const photosData: any = await photosRes.json();
+
+    if (!photosData.ok || !photosData.result || photosData.result.total_count === 0) {
+      logger.info(`Bot ${botDbId}: No profile photo found on Telegram.`);
+      return null;
+    }
+
+    // Get the best quality photo (last in the sizes array = largest)
+    const photoSizes = photosData.result.photos[0];
+    const photo = photoSizes[photoSizes.length - 1] || photoSizes[0];
+    const fileId = photo.file_id;
+
+    // 2. Get file path from Telegram
+    const fileRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getFile?file_id=${fileId}`);
+    const fileData: any = await fileRes.json();
+
+    if (!fileData.ok || !fileData.result?.file_path) {
+      logger.warn(`Bot ${botDbId}: Could not get file path for profile photo.`);
+      return null;
+    }
+
+    const filePath = fileData.result.file_path;
+    const ext = path.extname(filePath) || '.jpg';
+
+    // 3. Download the actual image from Telegram
+    const imageRes = await fetch(`${TELEGRAM_API_URL}/file/bot${token}/${filePath}`);
+    if (!imageRes.ok) {
+      logger.warn(`Bot ${botDbId}: Failed to download profile photo from Telegram (status ${imageRes.status}).`);
+      return null;
+    }
+
+    // 4. Save to local filesystem
+    const filename = `${botDbId}${ext}`;
+    const localPath = path.join(AVATAR_DIR, filename);
+    const arrayBuffer = await imageRes.arrayBuffer();
+    fs.writeFileSync(localPath, Buffer.from(arrayBuffer));
+
+    logger.info(`Bot ${botDbId}: Profile photo cached to ${localPath}`);
+    return `/uploads/avatars/${filename}`;
+  } catch (err: any) {
+    logger.error(`fetchAndCacheBotAvatar error for bot ${botDbId}: ${err.message || err}`);
+    return null;
   }
 };
 
@@ -80,12 +143,23 @@ export const addBot = async (req: Request, res: Response): Promise<void> => {
       }
     });
 
-    // Update avatarUrl with the relative path
+    // 5. Fetch and cache the Telegram profile photo
+    let avatarUrl: string | null = null;
+    try {
+      avatarUrl = await fetchAndCacheBotAvatar(token, bot.id);
+    } catch (e) {
+      logger.warn(`Could not fetch avatar during bot registration: ${e}`);
+    }
+
+    // If no avatar fetched, use the dynamic proxy endpoint as fallback
+    if (!avatarUrl) {
+      avatarUrl = `/bots/${bot.id}/avatar`;
+    }
+
+    // 6. Update DB with avatar URL
     const updatedBot = await prisma.telegramBot.update({
       where: { id: bot.id },
-      data: {
-        avatarUrl: `/bots/${bot.id}/avatar`
-      },
+      data: { avatarUrl },
       select: {
         id: true,
         name: true,
@@ -202,6 +276,16 @@ export const deleteBot = async (req: Request, res: Response): Promise<void> => {
       where: { id }
     });
 
+    // Clean up cached avatar file(s)
+    try {
+      const avatarFiles = fs.readdirSync(AVATAR_DIR).filter(f => f.startsWith(id));
+      for (const f of avatarFiles) {
+        fs.unlinkSync(path.join(AVATAR_DIR, f));
+      }
+    } catch (e) {
+      logger.warn(`Could not clean up avatar file for bot ${id}: ${e}`);
+    }
+
     await logAuditEvent(req.user.id, 'BOT_DELETE', 'TelegramBot', id, { oldVal: { name: bot.name, username: bot.username } });
 
     res.status(200).json({ message: 'Bot berhasil dihapus' });
@@ -224,51 +308,113 @@ export const getBotAvatar = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const token = decrypt(bot.token);
-    const botId = token.split(':')[0];
-
-    // 1. Get bot's profile photos
-    const photosRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getUserProfilePhotos?user_id=${botId}`);
-    const photosData: any = await photosRes.json();
-
-    if (!photosData.ok || !photosData.result || photosData.result.total_count === 0) {
-      res.status(404).json({ error: 'Avatar tidak ditemukan' });
+    // Check if we have a cached avatar file on disk
+    const avatarFiles = fs.readdirSync(AVATAR_DIR).filter(f => f.startsWith(id));
+    if (avatarFiles.length > 0) {
+      const cachedFilePath = path.join(AVATAR_DIR, avatarFiles[0]);
+      const ext = path.extname(avatarFiles[0]).toLowerCase();
+      const mimeMap: Record<string, string> = {
+        '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.png': 'image/png', '.gif': 'image/gif',
+        '.webp': 'image/webp'
+      };
+      res.setHeader('Content-Type', mimeMap[ext] || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.sendFile(cachedFilePath);
       return;
     }
 
-    // Get the smallest or medium size photo
-    const photoSizes = photosData.result.photos[0];
-    const photo = photoSizes[1] || photoSizes[0]; // Prefer medium, fallback to smallest
-    const fileId = photo.file_id;
-
-    // 2. Get file path
-    const fileRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getFile?file_id=${fileId}`);
-    const fileData: any = await fileRes.json();
-
-    if (!fileData.ok || !fileData.result.file_path) {
-      res.status(404).json({ error: 'File path tidak ditemukan' });
+    // No cached avatar — try to fetch from Telegram and cache it
+    let token: string;
+    try {
+      token = decrypt(bot.token);
+    } catch {
+      res.status(404).json({ error: 'Gagal mendekripsi token bot' });
       return;
     }
 
-    const filePath = fileData.result.file_path;
+    const avatarUrl = await fetchAndCacheBotAvatar(token, id);
+    if (avatarUrl) {
+      // Update the DB with the new cached static path
+      await prisma.telegramBot.update({
+        where: { id },
+        data: { avatarUrl }
+      });
 
-    // 3. Fetch the image file from Telegram
-    const imageRes = await fetch(`${TELEGRAM_API_URL}/file/bot${token}/${filePath}`);
-    
-    if (!imageRes.ok) {
-      res.status(404).json({ error: 'Gagal mengambil gambar dari Telegram' });
-      return;
+      // Serve the newly cached file
+      const newFiles = fs.readdirSync(AVATAR_DIR).filter(f => f.startsWith(id));
+      if (newFiles.length > 0) {
+        const newFilePath = path.join(AVATAR_DIR, newFiles[0]);
+        const ext = path.extname(newFiles[0]).toLowerCase();
+        const mimeMap: Record<string, string> = {
+          '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+          '.png': 'image/png', '.gif': 'image/gif',
+          '.webp': 'image/webp'
+        };
+        res.setHeader('Content-Type', mimeMap[ext] || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.sendFile(newFilePath);
+        return;
+      }
     }
 
-    const contentType = imageRes.headers.get('content-type') || 'image/jpeg';
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
-
-    const arrayBuffer = await imageRes.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    res.send(buffer);
+    // Fallback: No avatar available
+    res.status(404).json({ error: 'Avatar tidak ditemukan di Telegram' });
   } catch (error: any) {
     logger.error(`Get bot avatar error: ${error}`);
     res.status(500).json({ error: `Terjadi kesalahan internal saat mengambil avatar: ${error.message || error}` });
+  }
+};
+
+/**
+ * Manually trigger a refresh of a bot's cached avatar photo from Telegram.
+ */
+export const refreshBotAvatar = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const bot = await prisma.telegramBot.findUnique({
+      where: { id }
+    });
+
+    if (!bot) {
+      res.status(404).json({ error: 'Bot tidak ditemukan' });
+      return;
+    }
+
+    let token: string;
+    try {
+      token = decrypt(bot.token);
+    } catch {
+      res.status(400).json({ error: 'Gagal mendekripsi token bot' });
+      return;
+    }
+
+    // Delete old cached avatar file(s)
+    const oldFiles = fs.readdirSync(AVATAR_DIR).filter(f => f.startsWith(id));
+    for (const f of oldFiles) {
+      fs.unlinkSync(path.join(AVATAR_DIR, f));
+    }
+
+    // Fetch fresh avatar from Telegram
+    const avatarUrl = await fetchAndCacheBotAvatar(token, id);
+
+    if (avatarUrl) {
+      await prisma.telegramBot.update({
+        where: { id },
+        data: { avatarUrl }
+      });
+      res.status(200).json({ message: 'Avatar berhasil diperbarui', avatarUrl });
+    } else {
+      // No photo on Telegram, clear the avatar
+      await prisma.telegramBot.update({
+        where: { id },
+        data: { avatarUrl: null }
+      });
+      res.status(200).json({ message: 'Bot tidak memiliki foto profil di Telegram', avatarUrl: null });
+    }
+  } catch (error: any) {
+    logger.error(`Refresh bot avatar error: ${error}`);
+    res.status(500).json({ error: `Gagal memperbarui avatar: ${error.message || error}` });
   }
 };

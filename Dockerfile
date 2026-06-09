@@ -31,6 +31,9 @@ RUN pnpm prisma generate
 # Build the server application
 RUN pnpm build
 
+# Pre-create uploads directory for avatar caching
+RUN mkdir -p /app/apps/server/uploads/avatars
+
 # Set production environment variables
 ENV NODE_ENV=production
 ENV PORT=7860

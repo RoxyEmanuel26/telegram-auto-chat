@@ -3,11 +3,12 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { getBotAvatarUrl } from '@/lib/avatar';
 import SidebarLayout from '@/components/layout/SidebarLayout';
 import { toast } from 'sonner';
 import { 
   Bot, ShieldCheck, ShieldAlert, Trash2, Plus, X, 
-  Activity, Calendar, Loader2, Sparkles, RefreshCw 
+  Activity, Calendar, Loader2, Sparkles, RefreshCw, ImageIcon 
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -36,6 +37,7 @@ export default function BotsPage() {
   const [newDesc, setNewDesc] = useState('');
   const [isTestingNewToken, setIsTestingNewToken] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [refreshingAvatarId, setRefreshingAvatarId] = useState<string | null>(null);
 
   // Query: Fetch bots
   const { data, isLoading } = useQuery<{ bots: BotData[] }>({
@@ -125,6 +127,23 @@ export default function BotsPage() {
     }
   };
 
+  const handleRefreshAvatar = async (botId: string) => {
+    setRefreshingAvatarId(botId);
+    try {
+      const res = await api.post<{ message: string; avatarUrl: string | null }>(`/bots/${botId}/refresh-avatar`, {});
+      if (res.avatarUrl) {
+        toast.success('Foto profil bot berhasil diperbarui dari Telegram!');
+      } else {
+        toast.info(res.message || 'Bot tidak memiliki foto profil di Telegram');
+      }
+      queryClient.invalidateQueries({ queryKey: ['bots'] });
+    } catch (error: any) {
+      toast.error(error.message || 'Gagal memperbarui avatar');
+    } finally {
+      setRefreshingAvatarId(null);
+    }
+  };
+
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newToken || !newName) {
@@ -197,7 +216,7 @@ export default function BotsPage() {
                   <div className="flex items-center space-x-3">
                     {bot.avatarUrl ? (
                       <img
-                        src={bot.avatarUrl.startsWith('http') ? bot.avatarUrl : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}${bot.avatarUrl}`}
+                        src={getBotAvatarUrl(bot.avatarUrl) || undefined}
                         alt={bot.name}
                         className="w-12 h-12 rounded-2xl object-cover border border-slate-800"
                         onError={(e) => {
@@ -251,18 +270,35 @@ export default function BotsPage() {
 
                 {/* Card footer triggers */}
                 <div className="border-t border-slate-800/80 pt-4 mt-6 flex items-center justify-between">
-                  <button
-                    onClick={() => handleTestExistingConnection(bot.id)}
-                    disabled={testingId === bot.id}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all text-xs font-semibold cursor-pointer disabled:opacity-50"
-                  >
-                    {testingId === bot.id ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Activity className="w-3.5 h-3.5 text-primary" />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleTestExistingConnection(bot.id)}
+                      disabled={testingId === bot.id}
+                      className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all text-xs font-semibold cursor-pointer disabled:opacity-50"
+                    >
+                      {testingId === bot.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Activity className="w-3.5 h-3.5 text-primary" />
+                      )}
+                      <span>Tes Koneksi</span>
+                    </button>
+
+                    {user?.role !== 'VIEWER' && (
+                      <button
+                        onClick={() => handleRefreshAvatar(bot.id)}
+                        disabled={refreshingAvatarId === bot.id}
+                        title="Perbarui foto profil dari Telegram"
+                        className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all text-xs font-semibold cursor-pointer disabled:opacity-50"
+                      >
+                        {refreshingAvatarId === bot.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+                        )}
+                      </button>
                     )}
-                    <span>Tes Koneksi</span>
-                  </button>
+                  </div>
 
                   {user?.role === 'ADMIN' && (
                     <button
