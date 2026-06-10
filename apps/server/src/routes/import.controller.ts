@@ -265,8 +265,12 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
           req.headers['user-agent']
         );
 
+        const msg = process.env.NODE_ENV === 'production'
+          ? 'Terjadi kesalahan saat memproses import mode ATOMIC'
+          : (err.message || 'Terjadi kesalahan saat memproses import mode ATOMIC');
+
         res.status(400).json({
-          error: err.message || 'Terjadi kesalahan saat memproses import mode ATOMIC',
+          error: msg,
           total: rows.length,
           success: 0,
           failed: rows.length,
@@ -410,7 +414,10 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
     });
   } catch (error: any) {
     logger.error(`Process import error: ${error}`);
-    res.status(500).json({ error: error.message || 'Terjadi kesalahan saat memproses import' });
+    const msg = process.env.NODE_ENV === 'production'
+      ? 'Terjadi kesalahan saat memproses import'
+      : (error.message || 'Terjadi kesalahan saat memproses import');
+    res.status(500).json({ error: msg });
   }
 };
 

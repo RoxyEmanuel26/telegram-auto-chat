@@ -274,6 +274,9 @@ export const sendTestMessage = async (req: Request, res: Response): Promise<void
     });
   } catch (error: any) {
     logger.error(`Send test message error: ${error}`);
-    res.status(500).json({ error: `Gagal mengirim pesan test: ${error.message || error}` });
+    const msg = process.env.NODE_ENV === 'production'
+      ? 'Gagal mengirim pesan test'
+      : `Gagal mengirim pesan test: ${error.message || error}`;
+    res.status(500).json({ error: msg });
   }
 };
