@@ -2,15 +2,8 @@ import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { decrypt } from '../utils/crypto';
-import { ChannelType } from 'shared';
-
-let TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
-if (TELEGRAM_API_URL && !TELEGRAM_API_URL.startsWith('http://') && !TELEGRAM_API_URL.startsWith('https://')) {
-  TELEGRAM_API_URL = `https://${TELEGRAM_API_URL}`;
-}
-if (TELEGRAM_API_URL.endsWith('/')) {
-  TELEGRAM_API_URL = TELEGRAM_API_URL.slice(0, -1);
-}
+import { ChannelType, UserRole, AddChannelSchema } from 'shared';
+import { getTelegramApiUrl } from '../utils/telegram';
 
 // Helper to log audit events
 const logAuditEvent = async (userId: string | null, action: string, resource: string, resourceId: string, extra: any = {}) => {
@@ -32,12 +25,13 @@ const logAuditEvent = async (userId: string | null, action: string, resource: st
 
 export const addChannel = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { chatId, botId, tags } = req.body;
-
-    if (!chatId || !botId) {
-      res.status(400).json({ error: 'Chat ID dan Bot ID wajib diisi' });
+    const validated = AddChannelSchema.safeParse(req.body);
+    if (!validated.success) {
+      res.status(400).json({ error: validated.error.errors[0].message });
       return;
     }
+
+    const { chatId, botId, tags } = validated.data;
 
     if (!req.user) {
       res.status(401).json({ error: 'Tidak terautorisasi' });
@@ -60,10 +54,16 @@ export const addChannel = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
+    // Ownership authorization check
+    if (bot.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk menambahkan channel ke bot ini' });
+      return;
+    }
+
     const token = decrypt(bot.token);
 
     // 2. Fetch Chat info from Telegram Bot API
-    const chatRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getChat?chat_id=${targetChatId}`);
+    const chatRes = await fetch(`${getTelegramApiUrl()}/bot${token}/getChat?chat_id=${targetChatId}`);
     const chatData = await chatRes.json();
 
     if (!chatData.ok) {
@@ -87,7 +87,7 @@ export const addChannel = async (req: Request, res: Response): Promise<void> => 
     let memberCount = 0;
     try {
       // 3. Get member count (optional, fail gracefully to 0)
-      const memberCountRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getChatMemberCount?chat_id=${targetChatId}`);
+      const memberCountRes = await fetch(`${getTelegramApiUrl()}/bot${token}/getChatMemberCount?chat_id=${targetChatId}`);
       const memberCountData = await memberCountRes.json();
       if (memberCountData.ok) {
         memberCount = memberCountData.result;
@@ -136,27 +136,45 @@ export const addChannel = async (req: Request, res: Response): Promise<void> => 
 export const getChannels = async (req: Request, res: Response): Promise<void> => {
   try {
     const { botId } = req.query;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const skip = (page - 1) * limit;
 
     const whereClause: any = {};
     if (botId) {
       whereClause.botId = String(botId);
     }
 
-    const channels = await prisma.telegramChannel.findMany({
-      where: whereClause,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        bot: {
-          select: {
-            id: true,
-            name: true,
-            username: true
+    const [channels, total] = await prisma.$transaction([
+      prisma.telegramChannel.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          bot: {
+            select: {
+              id: true,
+              name: true,
+              username: true
+            }
           }
         }
+      }),
+      prisma.telegramChannel.count({
+        where: whereClause
+      })
+    ]);
+
+    res.status(200).json({
+      channels,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
       }
     });
-
-    res.status(200).json({ channels });
   } catch (error) {
     logger.error(`Get channels error: ${error}`);
     res.status(500).json({ error: 'Gagal mengambil daftar channel' });
@@ -173,11 +191,18 @@ export const deleteChannel = async (req: Request, res: Response): Promise<void> 
     }
 
     const channel = await prisma.telegramChannel.findUnique({
-      where: { id }
+      where: { id },
+      include: { bot: true }
     });
 
     if (!channel) {
       res.status(404).json({ error: 'Channel tidak ditemukan' });
+      return;
+    }
+
+    // Ownership authorization check
+    if (channel.bot.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk menghapus channel ini' });
       return;
     }
 
@@ -198,6 +223,11 @@ export const sendTestMessage = async (req: Request, res: Response): Promise<void
   try {
     const { id } = req.params;
 
+    if (!req.user) {
+      res.status(401).json({ error: 'Tidak terautorisasi' });
+      return;
+    }
+
     const channel = await prisma.telegramChannel.findUnique({
       where: { id },
       include: { bot: true }
@@ -208,11 +238,17 @@ export const sendTestMessage = async (req: Request, res: Response): Promise<void
       return;
     }
 
+    // Ownership authorization check
+    if (channel.bot.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk mengirim pesan test ke channel ini' });
+      return;
+    }
+
     const token = decrypt(channel.bot.token);
 
     const testText = `🤖 <b>TeleHub Broadcast System</b>\n\nKoneksi berhasil terverifikasi! Bot @${channel.bot.username} terhubung sukses dengan channel ini.`;
 
-    const telegramRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/sendMessage`, {
+    const telegramRes = await fetch(`${getTelegramApiUrl()}/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

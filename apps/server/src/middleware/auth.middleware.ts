@@ -31,7 +31,7 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
       return;
     }
 
-    const secret = process.env.JWT_SECRET || 'fallback-super-secret-jwt-key';
+    const secret = process.env.JWT_SECRET!;
     const decoded = jwt.verify(token, secret) as TokenPayload;
 
     const user = await prisma.user.findUnique({

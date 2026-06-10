@@ -12,12 +12,12 @@ const ACCESS_TOKEN_EXPIRY = '30d';
 const REFRESH_TOKEN_EXPIRY = '90d';
 
 const generateAccessToken = (userId: string, email: string, role: UserRole, twoFactorVerified: boolean): string => {
-  const secret = process.env.JWT_SECRET || 'fallback-super-secret-jwt-key';
+  const secret = process.env.JWT_SECRET!;
   return jwt.sign({ userId, email, role, twoFactorVerified }, secret, { expiresIn: ACCESS_TOKEN_EXPIRY });
 };
 
 const generateRefreshToken = (userId: string): string => {
-  const secret = process.env.JWT_REFRESH_SECRET || 'fallback-super-secret-refresh-key';
+  const secret = process.env.JWT_REFRESH_SECRET!;
   return jwt.sign({ userId }, secret, { expiresIn: REFRESH_TOKEN_EXPIRY });
 };
 
@@ -55,6 +55,15 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       res.status(400).json({ error: 'Email sudah terdaftar' });
+      return;
+    }
+
+    // Check if open registration is disabled via env var
+    const allowRegistration = process.env.ALLOW_REGISTRATION !== 'false';
+    const userCount = await prisma.user.count();
+
+    if (!allowRegistration && userCount > 0) {
+      res.status(403).json({ error: 'Registrasi publik ditutup oleh administrator' });
       return;
     }
 
@@ -219,7 +228,7 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    const secret = process.env.JWT_REFRESH_SECRET || 'fallback-super-secret-refresh-key';
+    const secret = process.env.JWT_REFRESH_SECRET!;
     const decoded = jwt.verify(refreshToken, secret) as { userId: string };
 
     const user = await prisma.user.findUnique({

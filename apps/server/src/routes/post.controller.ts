@@ -2,11 +2,22 @@ import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { broadcastQueue } from '../services/queue.service';
-import { PostStatus, TargetStatus, RecurrenceType, ParseMode } from 'shared';
+import { PostStatus, TargetStatus, RecurrenceType, ParseMode, UserRole, CreatePostSchema } from 'shared';
 import parser from 'cron-parser';
 
 export const createPost = async (req: Request, res: Response): Promise<void> => {
   try {
+    const validated = CreatePostSchema.safeParse(req.body);
+    if (!validated.success) {
+      res.status(400).json({ error: validated.error.errors[0].message });
+      return;
+    }
+
+    if (!req.user) {
+      res.status(401).json({ error: 'Tidak terautorisasi' });
+      return;
+    }
+
     const {
       title,
       content,
@@ -23,17 +34,7 @@ export const createPost = async (req: Request, res: Response): Promise<void> => 
       status, // DRAFT or SEND_NOW or SCHEDULED
       scheduledAt, // Optional DateTime string
       recurrence // Optional { type: RecurrenceType, cronExpression: string }
-    } = req.body;
-
-    if (!title || !content || !botId || !channelIds || !Array.isArray(channelIds) || channelIds.length === 0) {
-      res.status(400).json({ error: 'Data post tidak lengkap (Judul, Konten, Bot, dan Channel Target wajib diisi)' });
-      return;
-    }
-
-    if (!req.user) {
-      res.status(401).json({ error: 'Tidak terautorisasi' });
-      return;
-    }
+    } = validated.data;
 
     // Determine initial status based on input parameters
     let initialStatus = PostStatus.DRAFT;
@@ -124,39 +125,65 @@ export const createPost = async (req: Request, res: Response): Promise<void> => 
     res.status(201).json({ message: 'Post berhasil dibuat', post });
   } catch (error: any) {
     logger.error(`Create post error: ${error}`);
-    res.status(500).json({ error: error.message || 'Gagal membuat posting' });
+    if (error.message === 'Format Cron Expression tidak valid') {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    const message = process.env.NODE_ENV === 'production'
+      ? 'Gagal membuat posting'
+      : (error.message || 'Gagal membuat posting');
+    res.status(500).json({ error: message });
   }
 };
 
 export const getPosts = async (req: Request, res: Response): Promise<void> => {
   try {
-    const posts = await prisma.post.findMany({
-      where: { deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        bot: {
-          select: { name: true, username: true }
-        },
-        author: {
-          select: { name: true }
-        },
-        recurrences: {
-          where: { isActive: true }
-        },
-        targets: {
-          select: {
-            id: true,
-            status: true,
-            errorMessage: true
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const skip = (page - 1) * limit;
+
+    const [posts, total] = await prisma.$transaction([
+      prisma.post.findMany({
+        where: { deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          bot: {
+            select: { name: true, username: true }
+          },
+          author: {
+            select: { name: true }
+          },
+          recurrences: {
+            where: { isActive: true }
+          },
+          targets: {
+            select: {
+              id: true,
+              status: true,
+              errorMessage: true
+            }
+          },
+          _count: {
+            select: { targets: true }
           }
-        },
-        _count: {
-          select: { targets: true }
         }
+      }),
+      prisma.post.count({
+        where: { deletedAt: null }
+      })
+    ]);
+
+    res.status(200).json({
+      posts,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
       }
     });
-
-    res.status(200).json({ posts });
   } catch (error) {
     logger.error(`Get posts error: ${error}`);
     res.status(500).json({ error: 'Gagal mengambil daftar posting' });
@@ -219,6 +246,17 @@ export const reschedulePost = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    if (!req.user) {
+      res.status(401).json({ error: 'Tidak terautorisasi' });
+      return;
+    }
+
+    // Ownership authorization check
+    if (post.authorId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk mengubah postingan ini' });
+      return;
+    }
+
     if (post.status !== PostStatus.SCHEDULED) {
       res.status(400).json({ error: 'Hanya postingan berseri JADWAL yang dapat di-reschedule' });
       return;
@@ -241,9 +279,10 @@ export const reschedulePost = async (req: Request, res: Response): Promise<void>
       }
     });
 
-    // 4. Add new delayed job to BullMQ
+    // 4. Add new delayed job to BullMQ with unique jobId to avoid collision
+    const newJobId = `${post.id}-resched-${Date.now()}`;
     if (delay > 0) {
-      await broadcastQueue.add('broadcast-job', { postId: post.id }, { delay, jobId: post.id });
+      await broadcastQueue.add('broadcast-job', { postId: post.id }, { delay, jobId: newJobId });
       logger.info(`Post ${post.id} successfully rescheduled for future delivery.`);
     } else {
       // Send immediately if past date
@@ -251,7 +290,7 @@ export const reschedulePost = async (req: Request, res: Response): Promise<void>
         where: { id: post.id },
         data: { status: PostStatus.QUEUED }
       });
-      await broadcastQueue.add('broadcast-job', { postId: post.id }, { jobId: post.id });
+      await broadcastQueue.add('broadcast-job', { postId: post.id }, { jobId: newJobId });
     }
 
     res.status(200).json({ message: 'Postingan berhasil dijadwalkan ulang' });
@@ -271,6 +310,17 @@ export const cancelScheduledPost = async (req: Request, res: Response): Promise<
 
     if (!post) {
       res.status(404).json({ error: 'Post tidak ditemukan' });
+      return;
+    }
+
+    if (!req.user) {
+      res.status(401).json({ error: 'Tidak terautorisasi' });
+      return;
+    }
+
+    // Ownership authorization check
+    if (post.authorId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk membatalkan postingan ini' });
       return;
     }
 
@@ -314,6 +364,17 @@ export const retryFailedTargets = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    if (!req.user) {
+      res.status(401).json({ error: 'Tidak terautorisasi' });
+      return;
+    }
+
+    // Ownership authorization check
+    if (post.authorId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk mengirim ulang postingan ini' });
+      return;
+    }
+
     // Reset failed targets back to PENDING
     const failedTargetIds = post.targets
       .filter((t: any) => t.status === TargetStatus.FAILED)
@@ -335,8 +396,9 @@ export const retryFailedTargets = async (req: Request, res: Response): Promise<v
       data: { status: PostStatus.QUEUED }
     });
 
-    // Trigger queue job
-    await broadcastQueue.add('broadcast-job', { postId: post.id }, { jobId: post.id });
+    // Trigger queue job with unique jobId to avoid collision
+    const newJobId = `${post.id}-retry-${Date.now()}`;
+    await broadcastQueue.add('broadcast-job', { postId: post.id }, { jobId: newJobId });
 
     res.status(200).json({ message: 'Pengiriman ulang berhasil dimasukkan ke dalam antrian' });
   } catch (error) {

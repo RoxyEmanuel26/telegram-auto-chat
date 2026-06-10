@@ -33,7 +33,7 @@ import notificationRoutes from './routes/notification.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import path from 'path';
 import prisma from './utils/prisma';
-import { initScheduler } from './services/scheduler.service';
+import { initScheduler, stopScheduler } from './services/scheduler.service';
 import { seedDefaultTemplates } from './utils/templateSeeder';
 
 const app = express();
@@ -43,8 +43,21 @@ const PORT = process.env.PORT || 5000;
 
 // Security Middlewares
 app.use(helmet());
+// CORS: Support comma-separated origins for multi-environment deployments
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:3000')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g., server-to-server, mobile, curl)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: Origin ${origin} not allowed`));
+    }
+  },
   credentials: true,
 }));
 
@@ -59,8 +72,8 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 // Request Parsing
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
 
 // Custom Lightweight Cookie Parser Middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -230,6 +243,23 @@ app.listen(PORT, () => {
 // Graceful Shutdown
 const gracefulShutdown = async (signal: string) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
+  
+  // Stop the recurring scheduler interval
+  stopScheduler();
+  
+  // Close BullMQ worker and queue connections
+  try {
+    const { worker, broadcastQueue, redisConnection } = await import('./services/queue.service');
+    await worker.close();
+    logger.info('BullMQ worker closed.');
+    await broadcastQueue.close();
+    logger.info('BullMQ queue closed.');
+    await redisConnection.quit();
+    logger.info('Redis connection closed.');
+  } catch (err) {
+    logger.error(`Error closing queue connections: ${err}`);
+  }
+  
   await prisma.$disconnect();
   logger.info('Database connection closed.');
   process.exit(0);

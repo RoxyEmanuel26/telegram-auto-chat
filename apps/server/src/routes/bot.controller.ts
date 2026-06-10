@@ -1,18 +1,11 @@
 import { Request, Response } from 'express';
-import { UserRole } from 'shared';
+import { UserRole, AddBotSchema } from 'shared';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { encrypt, decrypt } from '../utils/crypto';
+import { getTelegramApiUrl } from '../utils/telegram';
 import fs from 'fs';
 import path from 'path';
-
-let TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
-if (TELEGRAM_API_URL && !TELEGRAM_API_URL.startsWith('http://') && !TELEGRAM_API_URL.startsWith('https://')) {
-  TELEGRAM_API_URL = `https://${TELEGRAM_API_URL}`;
-}
-if (TELEGRAM_API_URL.endsWith('/')) {
-  TELEGRAM_API_URL = TELEGRAM_API_URL.slice(0, -1);
-}
 
 // Helper to log audit events
 const logAuditEvent = async (userId: string, action: string, resource: string, resourceId: string, extra: any = {}) => {
@@ -47,7 +40,7 @@ const fetchAndCacheBotAvatar = async (token: string, botDbId: string): Promise<s
     const botUserId = token.split(':')[0];
 
     // 1. Get bot's profile photos from Telegram
-    const photosRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getUserProfilePhotos?user_id=${botUserId}`);
+    const photosRes = await fetch(`${getTelegramApiUrl()}/bot${token}/getUserProfilePhotos?user_id=${botUserId}`);
     const photosData: any = await photosRes.json();
 
     if (!photosData.ok || !photosData.result || photosData.result.total_count === 0) {
@@ -61,7 +54,7 @@ const fetchAndCacheBotAvatar = async (token: string, botDbId: string): Promise<s
     const fileId = photo.file_id;
 
     // 2. Get file path from Telegram
-    const fileRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getFile?file_id=${fileId}`);
+    const fileRes = await fetch(`${getTelegramApiUrl()}/bot${token}/getFile?file_id=${fileId}`);
     const fileData: any = await fileRes.json();
 
     if (!fileData.ok || !fileData.result?.file_path) {
@@ -73,7 +66,7 @@ const fetchAndCacheBotAvatar = async (token: string, botDbId: string): Promise<s
     const ext = path.extname(filePath) || '.jpg';
 
     // 3. Download the actual image from Telegram
-    const imageRes = await fetch(`${TELEGRAM_API_URL}/file/bot${token}/${filePath}`);
+    const imageRes = await fetch(`${getTelegramApiUrl()}/file/bot${token}/${filePath}`);
     if (!imageRes.ok) {
       logger.warn(`Bot ${botDbId}: Failed to download profile photo from Telegram (status ${imageRes.status}).`);
       return null;
@@ -95,12 +88,13 @@ const fetchAndCacheBotAvatar = async (token: string, botDbId: string): Promise<s
 
 export const addBot = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { token, name, description } = req.body;
-
-    if (!token || !name) {
-      res.status(400).json({ error: 'Token bot dan Nama internal wajib diisi' });
+    const validated = AddBotSchema.safeParse(req.body);
+    if (!validated.success) {
+      res.status(400).json({ error: validated.error.errors[0].message });
       return;
     }
+
+    const { token, name, description } = validated.data;
 
     if (!req.user) {
       res.status(401).json({ error: 'Tidak terautorisasi' });
@@ -108,7 +102,7 @@ export const addBot = async (req: Request, res: Response): Promise<void> => {
     }
 
     // 1. Verify token with Telegram Bot API
-    const telegramRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getMe`);
+    const telegramRes = await fetch(`${getTelegramApiUrl()}/bot${token}/getMe`);
     const telegramData = await telegramRes.json();
 
     if (!telegramData.ok) {
@@ -176,7 +170,10 @@ export const addBot = async (req: Request, res: Response): Promise<void> => {
     res.status(201).json({ message: 'Bot berhasil ditambahkan', bot: updatedBot });
   } catch (error: any) {
     logger.error(`Add bot error: ${error}`);
-    res.status(500).json({ error: `Terjadi kesalahan internal saat menambahkan bot: ${error.message || error}` });
+    const msg = process.env.NODE_ENV === 'production'
+      ? 'Terjadi kesalahan internal saat menambahkan bot'
+      : `Terjadi kesalahan internal saat menambahkan bot: ${error.message || error}`;
+    res.status(500).json({ error: msg });
   }
 };
 
@@ -218,11 +215,22 @@ export const testConnection = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    if (!req.user) {
+      res.status(401).json({ error: 'Tidak terautorisasi' });
+      return;
+    }
+
+    // Role verification (only ADMIN or Bot Owner can test connection)
+    if (req.user.role !== UserRole.ADMIN && bot.ownerId !== req.user.id) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk menguji bot ini' });
+      return;
+    }
+
     // Decrypt the token
     const token = decrypt(bot.token);
 
     // Call Telegram getMe
-    const telegramRes = await fetch(`${TELEGRAM_API_URL}/bot${token}/getMe`);
+    const telegramRes = await fetch(`${getTelegramApiUrl()}/bot${token}/getMe`);
     const telegramData = await telegramRes.json();
 
     if (!telegramData.ok) {
@@ -244,7 +252,10 @@ export const testConnection = async (req: Request, res: Response): Promise<void>
     });
   } catch (error: any) {
     logger.error(`Test bot connection error: ${error}`);
-    res.status(500).json({ error: `Gagal melakukan tes koneksi bot: ${error.message || error}` });
+    const msg = process.env.NODE_ENV === 'production'
+      ? 'Gagal melakukan tes koneksi bot'
+      : `Gagal melakukan tes koneksi bot: ${error.message || error}`;
+    res.status(500).json({ error: msg });
   }
 };
 
@@ -291,7 +302,10 @@ export const deleteBot = async (req: Request, res: Response): Promise<void> => {
     res.status(200).json({ message: 'Bot berhasil dihapus' });
   } catch (error: any) {
     logger.error(`Delete bot error: ${error}`);
-    res.status(500).json({ error: `Gagal menghapus bot: ${error.message || error}` });
+    const msg = process.env.NODE_ENV === 'production'
+      ? 'Gagal menghapus bot'
+      : `Gagal menghapus bot: ${error.message || error}`;
+    res.status(500).json({ error: msg });
   }
 };
 
@@ -362,7 +376,10 @@ export const getBotAvatar = async (req: Request, res: Response): Promise<void> =
     res.status(404).json({ error: 'Avatar tidak ditemukan di Telegram' });
   } catch (error: any) {
     logger.error(`Get bot avatar error: ${error}`);
-    res.status(500).json({ error: `Terjadi kesalahan internal saat mengambil avatar: ${error.message || error}` });
+    const msg = process.env.NODE_ENV === 'production'
+      ? 'Terjadi kesalahan internal saat mengambil avatar'
+      : `Terjadi kesalahan internal saat mengambil avatar: ${error.message || error}`;
+    res.status(500).json({ error: msg });
   }
 };
 
@@ -379,6 +396,17 @@ export const refreshBotAvatar = async (req: Request, res: Response): Promise<voi
 
     if (!bot) {
       res.status(404).json({ error: 'Bot tidak ditemukan' });
+      return;
+    }
+
+    if (!req.user) {
+      res.status(401).json({ error: 'Tidak terautorisasi' });
+      return;
+    }
+
+    // Ownership authorization check
+    if (req.user.role !== UserRole.ADMIN && bot.ownerId !== req.user.id) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk memperbarui avatar bot ini' });
       return;
     }
 
@@ -415,6 +443,9 @@ export const refreshBotAvatar = async (req: Request, res: Response): Promise<voi
     }
   } catch (error: any) {
     logger.error(`Refresh bot avatar error: ${error}`);
-    res.status(500).json({ error: `Gagal memperbarui avatar: ${error.message || error}` });
+    const msg = process.env.NODE_ENV === 'production'
+      ? 'Gagal memperbarui avatar'
+      : `Gagal memperbarui avatar: ${error.message || error}`;
+    res.status(500).json({ error: msg });
   }
 };

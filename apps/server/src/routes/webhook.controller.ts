@@ -4,6 +4,44 @@ import logger from '../utils/logger';
 import crypto from 'crypto';
 import { dispatchWebhook } from '../services/webhook.service';
 import { logAction } from '../utils/audit';
+import { UserRole, CreateWebhookSchema } from 'shared';
+
+// SSRF-safe URL validation helper
+const isValidWebhookUrl = (urlString: string): boolean => {
+  try {
+    const url = new URL(urlString);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+    const hostname = url.hostname.toLowerCase();
+    // Block loopback / local IP ranges
+    const localHosts = [
+      'localhost',
+      '127.0.0.1',
+      '0.0.0.0',
+      '::1'
+    ];
+    if (localHosts.includes(hostname)) {
+      return false;
+    }
+    // Block private network ranges (10.x.x.x, 192.168.x.x)
+    if (hostname.startsWith('10.') || hostname.startsWith('192.168.')) {
+      return false;
+    }
+    if (hostname.startsWith('172.')) {
+      const parts = hostname.split('.');
+      if (parts.length >= 2) {
+        const secondOctet = parseInt(parts[1], 10);
+        if (secondOctet >= 16 && secondOctet <= 31) {
+          return false;
+        }
+      }
+    }
+    return true;
+  } catch (err) {
+    return false;
+  }
+};
 
 export const getWebhooks = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -25,15 +63,38 @@ export const getWebhooks = async (req: Request, res: Response): Promise<void> =>
 
 export const createWebhook = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, url, events, botId } = req.body;
-
-    if (!name || !url || !events || !botId || !Array.isArray(events) || events.length === 0) {
-      res.status(400).json({ error: 'Data webhook tidak lengkap (Nama, URL, Bot, dan minimal 1 Event wajib diisi)' });
+    const validated = CreateWebhookSchema.safeParse(req.body);
+    if (!validated.success) {
+      res.status(400).json({ error: validated.error.errors[0].message });
       return;
     }
 
+    const { name, url, events, botId } = validated.data;
+
     if (!req.user) {
       res.status(401).json({ error: 'Tidak terautorisasi' });
+      return;
+    }
+
+    // SSRF URL Validation
+    if (!isValidWebhookUrl(url)) {
+      res.status(400).json({ error: 'URL webhook tidak valid (tidak boleh menggunakan localhost atau jaringan privat)' });
+      return;
+    }
+
+    // Verify bot and ownerId
+    const bot = await prisma.telegramBot.findUnique({
+      where: { id: botId }
+    });
+
+    if (!bot) {
+      res.status(404).json({ error: 'Bot tidak ditemukan' });
+      return;
+    }
+
+    // Ownership authorization check
+    if (bot.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk mendaftarkan webhook untuk bot ini' });
       return;
     }
 
@@ -79,10 +140,27 @@ export const updateWebhook = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const webhook = await prisma.webhook.findUnique({ where: { id } });
+    const webhook = await prisma.webhook.findUnique({ 
+      where: { id },
+      include: { bot: true }
+    });
     if (!webhook) {
       res.status(404).json({ error: 'Webhook tidak ditemukan' });
       return;
+    }
+
+    // Ownership authorization check
+    if (webhook.bot.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk mengubah webhook ini' });
+      return;
+    }
+
+    // SSRF URL Validation if URL is updated
+    if (url !== undefined) {
+      if (!isValidWebhookUrl(url)) {
+        res.status(400).json({ error: 'URL webhook tidak valid (tidak boleh menggunakan localhost atau jaringan privat)' });
+        return;
+      }
     }
 
     const updated = await prisma.webhook.update({
@@ -122,9 +200,18 @@ export const deleteWebhook = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const webhook = await prisma.webhook.findUnique({ where: { id } });
+    const webhook = await prisma.webhook.findUnique({ 
+      where: { id },
+      include: { bot: true }
+    });
     if (!webhook) {
       res.status(404).json({ error: 'Webhook tidak ditemukan' });
+      return;
+    }
+
+    // Ownership authorization check
+    if (webhook.bot.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk menghapus webhook ini' });
       return;
     }
 
@@ -152,9 +239,23 @@ export const testWebhook = async (req: Request, res: Response): Promise<void> =>
   try {
     const { id } = req.params;
 
-    const webhook = await prisma.webhook.findUnique({ where: { id } });
+    if (!req.user) {
+      res.status(401).json({ error: 'Tidak terautorisasi' });
+      return;
+    }
+
+    const webhook = await prisma.webhook.findUnique({ 
+      where: { id },
+      include: { bot: true }
+    });
     if (!webhook) {
       res.status(404).json({ error: 'Webhook tidak ditemukan' });
+      return;
+    }
+
+    // Ownership authorization check
+    if (webhook.bot.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: 'Forbidden: Anda tidak memiliki hak akses untuk menguji webhook ini' });
       return;
     }
 

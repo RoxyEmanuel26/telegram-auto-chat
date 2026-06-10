@@ -123,3 +123,67 @@ export const ChangePasswordSchema = z.object({
 });
 
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
+
+// ==========================================
+// ZOD BOT MANAGEMENT SCHEMAS
+// ==========================================
+
+export const AddBotSchema = z.object({
+  token: z.string().min(30, 'Token bot tidak valid').max(200, 'Token bot terlalu panjang'),
+  name: z.string().min(1, 'Nama bot wajib diisi').max(100, 'Nama bot terlalu panjang'),
+  description: z.string().max(500, 'Deskripsi terlalu panjang').optional().nullable()
+});
+
+export type AddBotInput = z.infer<typeof AddBotSchema>;
+
+// ==========================================
+// ZOD CHANNEL MANAGEMENT SCHEMAS
+// ==========================================
+
+export const AddChannelSchema = z.object({
+  chatId: z.string().min(1, 'Chat ID wajib diisi').max(100, 'Chat ID terlalu panjang'),
+  botId: z.string().uuid('Bot ID tidak valid'),
+  tags: z.array(z.string().max(50)).max(20).optional()
+});
+
+export type AddChannelInput = z.infer<typeof AddChannelSchema>;
+
+// ==========================================
+// ZOD POST/BROADCAST SCHEMAS
+// ==========================================
+
+export const CreatePostSchema = z.object({
+  title: z.string().min(1, 'Judul wajib diisi').max(200, 'Judul terlalu panjang'),
+  content: z.string().min(1, 'Konten wajib diisi').max(10000, 'Konten terlalu panjang (maks 10.000 karakter)'),
+  parseMode: z.nativeEnum(ParseMode).optional(),
+  botId: z.string().uuid('Bot ID tidak valid'),
+  channelIds: z.array(z.string().uuid('Channel ID tidak valid')).min(1, 'Pilih minimal 1 channel target'),
+  mediaType: z.nativeEnum(MediaType).optional(),
+  mediaUrl: z.string().url('URL media tidak valid').optional().nullable(),
+  mediaCaption: z.string().max(1024, 'Caption terlalu panjang').optional().nullable(),
+  inlineKeyboard: z.any().optional().nullable(),
+  disableNotification: z.boolean().optional(),
+  protectContent: z.boolean().optional(),
+  disableWebPagePreview: z.boolean().optional(),
+  status: z.enum(['DRAFT', 'SEND_NOW', 'SCHEDULED']).optional(),
+  scheduledAt: z.string().datetime({ offset: true }).optional().nullable(),
+  recurrence: z.object({
+    type: z.nativeEnum(RecurrenceType),
+    cronExpression: z.string().min(9, 'Cron expression tidak valid').max(100)
+  }).optional().nullable()
+});
+
+export type CreatePostInput = z.infer<typeof CreatePostSchema>;
+
+// ==========================================
+// ZOD WEBHOOK SCHEMAS
+// ==========================================
+
+export const CreateWebhookSchema = z.object({
+  name: z.string().min(1, 'Nama webhook wajib diisi').max(100, 'Nama terlalu panjang'),
+  url: z.string().url('URL webhook tidak valid'),
+  events: z.array(z.string()).min(1, 'Pilih minimal 1 event'),
+  botId: z.string().uuid('Bot ID tidak valid')
+});
+
+export type CreateWebhookInput = z.infer<typeof CreateWebhookSchema>;

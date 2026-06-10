@@ -7,13 +7,7 @@ import { PostStatus, TargetStatus, MediaType } from 'shared';
 import { dispatchWebhook } from './webhook.service';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
-let TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
-if (TELEGRAM_API_URL && !TELEGRAM_API_URL.startsWith('http://') && !TELEGRAM_API_URL.startsWith('https://')) {
-  TELEGRAM_API_URL = `https://${TELEGRAM_API_URL}`;
-}
-if (TELEGRAM_API_URL.endsWith('/')) {
-  TELEGRAM_API_URL = TELEGRAM_API_URL.slice(0, -1);
-}
+import { getTelegramApiUrl } from '../utils/telegram';
 
 // Helper: Escape HTML special characters for plain text captions
 const escapeHtml = (text: string): string => {
@@ -130,7 +124,7 @@ const cleanHtmlForTelegram = (html: string): string => {
 };
 
 // Setup Redis connection for BullMQ
-const redisConnection = new Redis(REDIS_URL, {
+export const redisConnection = new Redis(REDIS_URL, {
   maxRetriesPerRequest: null
 });
 
@@ -141,13 +135,15 @@ export const broadcastQueue = new Queue('post-broadcast', {
     backoff: {
       type: 'exponential',
       delay: 5000
-    }
+    },
+    removeOnComplete: { count: 100 },
+    removeOnFail: { count: 500 }
   }
 });
 
 // Helper: send direct request to Telegram API
 const sendTelegramRequest = async (token: string, method: string, payload: any) => {
-  const url = `${TELEGRAM_API_URL}/bot${token}/${method}`;
+  const url = `${getTelegramApiUrl()}/bot${token}/${method}`;
   
   const response = await fetch(url, {
     method: 'POST',
@@ -159,7 +155,7 @@ const sendTelegramRequest = async (token: string, method: string, payload: any) 
 };
 
 // BullMQ Worker to process broadcasts
-const worker = new Worker(
+export const worker = new Worker(
   'post-broadcast',
   async (job: Job) => {
     const { postId } = job.data;
@@ -403,6 +399,12 @@ const worker = new Worker(
       }
     }).catch((err: any) => logger.error(`Failed to create notification: ${err}`));
 
+    // Re-query targets from database to send fresh (non-stale) statuses in webhook
+    const updatedTargets = await prisma.postTarget.findMany({
+      where: { postId: post.id },
+      include: { channel: true }
+    });
+
     // Dispatch webhook event
     const eventName = finalStatus === PostStatus.FAILED ? 'post.failed' : 'post.sent';
     await dispatchWebhook(post.botId, eventName, {
@@ -412,7 +414,7 @@ const worker = new Worker(
       sentAt: new Date().toISOString(),
       successCount,
       failedCount,
-      targets: post.targets.map((t: any) => ({
+      targets: updatedTargets.map((t: any) => ({
         channelId: t.channel.chatId,
         channelName: t.channel.name,
         status: t.status,

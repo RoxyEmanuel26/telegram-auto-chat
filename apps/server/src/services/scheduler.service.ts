@@ -52,6 +52,7 @@ export const runSchedulerCheck = async (): Promise<void> => {
             data: {
               title: `${parentPost.title} (Recurring Run)`,
               content: parentPost.content,
+              parseMode: parentPost.parseMode,
               botId: parentPost.botId,
               mediaType: parentPost.mediaType,
               mediaUrl: parentPost.mediaUrl,
