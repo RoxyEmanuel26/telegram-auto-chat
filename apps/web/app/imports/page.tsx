@@ -9,7 +9,8 @@ import { useRouter } from 'next/navigation';
 import { 
   UploadCloud, FileText, Database, CheckCircle, AlertTriangle, 
   XCircle, ArrowRight, ArrowLeft, Loader2, Bot, Calendar, 
-  Settings, Radio, RefreshCw, FileUp, AlertCircle, Trash2, ChevronDown, ChevronUp, Download
+  Settings, Radio, RefreshCw, FileUp, AlertCircle, Trash2, ChevronDown, ChevronUp, Download,
+  Image as ImageIcon, Link2
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { ImportStatus } from 'shared';
@@ -75,7 +76,9 @@ export default function ImportsPage() {
     title: '',
     content: '',
     channels: '',
-    scheduledAt: ''
+    scheduledAt: '',
+    mediaUrl: '',
+    buttons: ''
   });
 
   // History states
@@ -83,10 +86,10 @@ export default function ImportsPage() {
 
   const downloadTemplateCSV = () => {
     const csvContent = 
-      "title,content,channels,scheduledAt\n" +
-      "\"Promo Diskon Hari Ini\",\"Dapatkan diskon 50% untuk produk kecantikan dengan menggunakan kode kupon DISKON50.\",\"-10012345678,@my_username_group\",\"2026-06-25 14:00\"\n" +
-      "\"Pengumuman Event\",\"Jangan lupa untuk mengikuti webinar besok pagi jam 09.00 WIB. Link pendaftaran ada di bio.\",\"@my_channel_username\",\n" +
-      "\"Pesan HTML Penting\",\"Halo! Layanan kami akan mengalami pemeliharaan rutin. <b>Mohon maaf atas ketidaknyamanannya.</b>\",\"-10029342423,-10098234823\",\"2026-06-26 23:30\"";
+      "title,content,channels,scheduledAt,mediaUrl,buttons\n" +
+      "\"Promo Diskon Hari Ini\",\"Dapatkan diskon 50% untuk produk kecantikan dengan menggunakan kode kupon DISKON50.\",\"-10012345678,@my_username_group\",\"2026-06-25 14:00\",\"https://example.com/images/promo-banner.jpg\",\"Beli Sekarang|https://example.com/shop;Info Lengkap|https://example.com/info\"\n" +
+      "\"Pengumuman Event\",\"Jangan lupa untuk mengikuti webinar besok pagi jam 09.00 WIB. Link pendaftaran ada di bio.\",\"@my_channel_username\",,\"https://example.com/images/event-poster.png\",\"Daftar Sekarang|https://example.com/register\"\n" +
+      "\"Pesan HTML Penting\",\"Halo! Layanan kami akan mengalami pemeliharaan rutin. <b>Mohon maaf atas ketidaknyamanannya.</b>\",\"-10029342423,-10098234823\",\"2026-06-26 23:30\",,";
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -138,7 +141,9 @@ export default function ImportsPage() {
       title: '',
       content: '',
       channels: '',
-      scheduledAt: ''
+      scheduledAt: '',
+      mediaUrl: '',
+      buttons: ''
     };
 
     // Simple heuristic to auto-map based on common column names
@@ -152,6 +157,10 @@ export default function ImportsPage() {
         newMapping.channels = idxStr;
       } else if (h.includes('sched') || h.includes('jadwal') || h.includes('waktu') || h.includes('date') || h.includes('time')) {
         newMapping.scheduledAt = idxStr;
+      } else if (h.includes('media') || h.includes('image') || h.includes('gambar') || h.includes('foto') || h.includes('photo') || h.includes('lampiran')) {
+        newMapping.mediaUrl = idxStr;
+      } else if (h.includes('button') || h.includes('tombol') || h.includes('keyboard') || h.includes('btn') || h.includes('inline')) {
+        newMapping.buttons = idxStr;
       }
     });
 
@@ -222,7 +231,7 @@ export default function ImportsPage() {
   const handleStartImport = () => {
     if (!previewData || !selectedBotId) return;
 
-    // Build mapping payload (only send scheduledAt if chosen)
+    // Build mapping payload (only send optional fields if chosen)
     const mapPayload: any = {
       title: mapping.title,
       content: mapping.content,
@@ -231,6 +240,12 @@ export default function ImportsPage() {
     
     if (mapping.scheduledAt !== '') {
       mapPayload.scheduledAt = mapping.scheduledAt;
+    }
+    if (mapping.mediaUrl !== '') {
+      mapPayload.mediaUrl = mapping.mediaUrl;
+    }
+    if (mapping.buttons !== '') {
+      mapPayload.buttons = mapping.buttons;
     }
 
     processImportMutation.mutate({
@@ -251,7 +266,9 @@ export default function ImportsPage() {
       title: '',
       content: '',
       channels: '',
-      scheduledAt: ''
+      scheduledAt: '',
+      mediaUrl: '',
+      buttons: ''
     });
   };
 
@@ -585,6 +602,44 @@ export default function ImportsPage() {
                     <span className="text-[10px] text-slate-500 block">Kolom format tanggal standar (misal: <code>2026-06-25 14:00</code>)</span>
                   </div>
 
+                  {/* Field: Media URL */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-300 block flex items-center space-x-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-primary" />
+                      <span>Lampiran Media / URL Gambar (Opsional)</span>
+                    </label>
+                    <select
+                      value={mapping.mediaUrl}
+                      onChange={(e) => setMapping({ ...mapping, mediaUrl: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-xl px-4 py-2.5 text-xs focus:outline-none"
+                    >
+                      <option value="">-- Abaikan (Tanpa Media) --</option>
+                      {previewData.headers.map((h, idx) => (
+                        <option key={idx} value={idx}>{h} (Kolom {idx + 1})</option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-500 block">Kolom berisi URL gambar/video (misal: <code>https://example.com/image.jpg</code>). Tipe media dideteksi otomatis dari ekstensi file.</span>
+                  </div>
+
+                  {/* Field: Inline Keyboard Buttons */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-300 block flex items-center space-x-1.5">
+                      <Link2 className="w-3.5 h-3.5 text-primary" />
+                      <span>Inline Keyboard Buttons (Opsional)</span>
+                    </label>
+                    <select
+                      value={mapping.buttons}
+                      onChange={(e) => setMapping({ ...mapping, buttons: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-xl px-4 py-2.5 text-xs focus:outline-none"
+                    >
+                      <option value="">-- Abaikan (Tanpa Tombol) --</option>
+                      {previewData.headers.map((h, idx) => (
+                        <option key={idx} value={idx}>{h} (Kolom {idx + 1})</option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-500 block">Format: <code>NamaTombol|URL</code> dipisahkan titik koma untuk beberapa tombol (misal: <code>Beli Sekarang|https://shop.com;Info|https://info.com</code>)</span>
+                  </div>
+
                 </div>
 
                 {/* CSV Preview Data Table */}
@@ -672,7 +727,7 @@ export default function ImportsPage() {
                 {/* Validation Preview Table */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-350 block">Daftar Preview Terpetakan</span>
-                  <div className="border border-slate-800 rounded-xl overflow-hidden">
+                  <div className="border border-slate-800 rounded-xl overflow-hidden overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-slate-950 border-b border-slate-850 font-bold text-slate-300">
@@ -681,6 +736,8 @@ export default function ImportsPage() {
                           <th className="p-3.5 max-w-[200px] truncate">Pesan Preview</th>
                           <th className="p-3.5">Channels</th>
                           {mapping.scheduledAt !== '' && <th className="p-3.5">Jadwal Kirim</th>}
+                          {mapping.mediaUrl !== '' && <th className="p-3.5">Media</th>}
+                          {mapping.buttons !== '' && <th className="p-3.5">Tombol</th>}
                           <th className="p-3.5 w-28 text-right">Validasi</th>
                         </tr>
                       </thead>
@@ -691,6 +748,8 @@ export default function ImportsPage() {
                           const content = row[Number(mapping.content)] || '';
                           const channels = row[Number(mapping.channels)] || '';
                           const dateStr = mapping.scheduledAt !== '' ? row[Number(mapping.scheduledAt)] : '';
+                          const mediaUrlVal = mapping.mediaUrl !== '' ? (row[Number(mapping.mediaUrl)] || '') : '';
+                          const buttonsVal = mapping.buttons !== '' ? (row[Number(mapping.buttons)] || '') : '';
                           
                           return (
                             <tr key={idx} className="hover:bg-slate-950/10">
@@ -708,6 +767,28 @@ export default function ImportsPage() {
                                     )
                                   ) : (
                                     <span className="text-slate-500 italic">Sesuai default</span>
+                                  )}
+                                </td>
+                              )}
+                              {mapping.mediaUrl !== '' && (
+                                <td className="p-3 text-[10px] truncate max-w-[120px]">
+                                  {mediaUrlVal ? (
+                                    <span className="text-cyan-400 font-mono" title={mediaUrlVal}>
+                                      📎 {mediaUrlVal.split('/').pop() || mediaUrlVal}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-600 italic">—</span>
+                                  )}
+                                </td>
+                              )}
+                              {mapping.buttons !== '' && (
+                                <td className="p-3 text-[10px] truncate max-w-[140px]">
+                                  {buttonsVal ? (
+                                    <span className="text-primary font-medium" title={buttonsVal}>
+                                      🔗 {buttonsVal.split(';').length} tombol
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-600 italic">—</span>
                                   )}
                                 </td>
                               )}

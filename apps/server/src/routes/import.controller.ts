@@ -5,7 +5,7 @@ import path from 'path';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { broadcastQueue } from '../services/queue.service';
-import { PostStatus, TargetStatus, ImportStatus } from 'shared';
+import { PostStatus, TargetStatus, ImportStatus, MediaType } from 'shared';
 import { logAction } from '../utils/audit';
 
 const parseGmt7Date = (dateStr: string): Date => {
@@ -166,6 +166,8 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
             const content = row[Number(mapping.content)]?.trim();
             const channelsStr = row[Number(mapping.channels)]?.trim();
             const scheduledAtStr = mapping.scheduledAt !== undefined ? row[Number(mapping.scheduledAt)]?.trim() : undefined;
+            const mediaUrlStr = mapping.mediaUrl !== undefined ? row[Number(mapping.mediaUrl)]?.trim() : undefined;
+            const buttonsStr = mapping.buttons !== undefined ? row[Number(mapping.buttons)]?.trim() : undefined;
 
             if (!title || !content || !channelsStr) {
               throw new Error(`Kolom Title, Content, atau Target Channels kosong`);
@@ -205,6 +207,36 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
               }
             }
 
+            // Determine media type from URL extension
+            let mediaType = MediaType.NONE;
+            let mediaUrl: string | null = null;
+            if (mediaUrlStr) {
+              mediaUrl = mediaUrlStr;
+              const lowerUrl = mediaUrlStr.toLowerCase();
+              if (lowerUrl.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/)) {
+                mediaType = MediaType.PHOTO;
+              } else if (lowerUrl.match(/\.(mp4|avi|mov|mkv|webm)$/)) {
+                mediaType = MediaType.VIDEO;
+              } else if (lowerUrl.match(/\.(mp3|ogg|wav|flac|aac)$/)) {
+                mediaType = MediaType.AUDIO;
+              } else {
+                mediaType = MediaType.PHOTO; // Default to PHOTO for URLs
+              }
+            }
+
+            // Parse inline keyboard buttons: format "Nama1|URL1;Nama2|URL2"
+            let inlineKeyboard: any = null;
+            if (buttonsStr) {
+              const btnPairs = buttonsStr.split(';').map(b => b.trim()).filter(b => b.length > 0);
+              const buttons = btnPairs.map(pair => {
+                const [text, url] = pair.split('|').map(s => s.trim());
+                return text && url ? { text, url } : null;
+              }).filter((b): b is { text: string; url: string } => b !== null);
+              if (buttons.length > 0) {
+                inlineKeyboard = { inline_keyboard: [buttons] };
+              }
+            }
+
             // Create the post
             const newPost = await tx.post.create({
               data: {
@@ -214,6 +246,9 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
                 status: postStatus,
                 scheduledAt,
                 authorId: req.user!.id,
+                mediaType,
+                mediaUrl,
+                inlineKeyboard: inlineKeyboard ? JSON.parse(JSON.stringify(inlineKeyboard)) : null,
               }
             });
 
@@ -303,6 +338,8 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
           const content = row[Number(mapping.content)]?.trim();
           const channelsStr = row[Number(mapping.channels)]?.trim();
           const scheduledAtStr = mapping.scheduledAt !== undefined ? row[Number(mapping.scheduledAt)]?.trim() : undefined;
+          const mediaUrlStr = mapping.mediaUrl !== undefined ? row[Number(mapping.mediaUrl)]?.trim() : undefined;
+          const buttonsStr = mapping.buttons !== undefined ? row[Number(mapping.buttons)]?.trim() : undefined;
 
           if (!title || !content || !channelsStr) {
             throw new Error('Kolom Title, Content, atau Target Channels kosong');
@@ -342,6 +379,36 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
             }
           }
 
+          // Determine media type from URL extension
+          let mediaType = MediaType.NONE;
+          let mediaUrl: string | null = null;
+          if (mediaUrlStr) {
+            mediaUrl = mediaUrlStr;
+            const lowerUrl = mediaUrlStr.toLowerCase();
+            if (lowerUrl.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/)) {
+              mediaType = MediaType.PHOTO;
+            } else if (lowerUrl.match(/\.(mp4|avi|mov|mkv|webm)$/)) {
+              mediaType = MediaType.VIDEO;
+            } else if (lowerUrl.match(/\.(mp3|ogg|wav|flac|aac)$/)) {
+              mediaType = MediaType.AUDIO;
+            } else {
+              mediaType = MediaType.PHOTO; // Default to PHOTO for URLs
+            }
+          }
+
+          // Parse inline keyboard buttons: format "Nama1|URL1;Nama2|URL2"
+          let inlineKeyboard: any = null;
+          if (buttonsStr) {
+            const btnPairs = buttonsStr.split(';').map(b => b.trim()).filter(b => b.length > 0);
+            const buttons = btnPairs.map(pair => {
+              const [text, url] = pair.split('|').map(s => s.trim());
+              return text && url ? { text, url } : null;
+            }).filter((b): b is { text: string; url: string } => b !== null);
+            if (buttons.length > 0) {
+              inlineKeyboard = { inline_keyboard: [buttons] };
+            }
+          }
+
           // Create the post
           const post = await prisma.$transaction(async (tx: any) => {
             const newPost = await tx.post.create({
@@ -352,6 +419,9 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
                 status: postStatus,
                 scheduledAt,
                 authorId: req.user!.id,
+                mediaType,
+                mediaUrl,
+                inlineKeyboard: inlineKeyboard ? JSON.parse(JSON.stringify(inlineKeyboard)) : null,
               }
             });
 
