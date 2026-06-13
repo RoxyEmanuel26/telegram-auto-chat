@@ -8,6 +8,19 @@ import { broadcastQueue } from '../services/queue.service';
 import { PostStatus, TargetStatus, ImportStatus } from 'shared';
 import { logAction } from '../utils/audit';
 
+const parseGmt7Date = (dateStr: string): Date => {
+  const trimmed = dateStr.trim();
+  const hasTimezone = /Z|[+-]\d{2}(:?\d{2})?$/.test(trimmed);
+  if (!hasTimezone) {
+    const formatted = trimmed.replace(' ', 'T');
+    const parsed = new Date(formatted + '+07:00');
+    if (!isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+  return new Date(trimmed);
+};
+
 export const previewImport = async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
@@ -178,7 +191,7 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
             let postStatus = PostStatus.DRAFT;
 
             if (scheduledAtStr) {
-              const parsedDate = new Date(scheduledAtStr);
+              const parsedDate = parseGmt7Date(scheduledAtStr);
               if (isNaN(parsedDate.getTime())) {
                 throw new Error(`Format tanggal tidak valid: ${scheduledAtStr}`);
               }
@@ -315,7 +328,7 @@ export const processImport = async (req: Request, res: Response): Promise<void> 
           let postStatus = PostStatus.DRAFT;
 
           if (scheduledAtStr) {
-            const parsedDate = new Date(scheduledAtStr);
+            const parsedDate = parseGmt7Date(scheduledAtStr);
             if (isNaN(parsedDate.getTime())) {
               throw new Error(`Format tanggal tidak valid: ${scheduledAtStr}`);
             }

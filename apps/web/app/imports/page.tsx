@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import { 
   UploadCloud, FileText, Database, CheckCircle, AlertTriangle, 
   XCircle, ArrowRight, ArrowLeft, Loader2, Bot, Calendar, 
-  Settings, Radio, RefreshCw, FileUp, AlertCircle, Trash2, ChevronDown, ChevronUp
+  Settings, Radio, RefreshCw, FileUp, AlertCircle, Trash2, ChevronDown, ChevronUp, Download
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { ImportStatus } from 'shared';
@@ -80,6 +80,24 @@ export default function ImportsPage() {
 
   // History states
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+
+  const downloadTemplateCSV = () => {
+    const csvContent = 
+      "title,content,channels,scheduledAt\n" +
+      "\"Promo Diskon Hari Ini\",\"Dapatkan diskon 50% untuk produk kecantikan dengan menggunakan kode kupon DISKON50.\",\"-10012345678,@my_username_group\",\"2026-06-25 14:00\"\n" +
+      "\"Pengumuman Event\",\"Jangan lupa untuk mengikuti webinar besok pagi jam 09.00 WIB. Link pendaftaran ada di bio.\",\"@my_channel_username\",\n" +
+      "\"Pesan HTML Penting\",\"Halo! Layanan kami akan mengalami pemeliharaan rutin. <b>Mohon maaf atas ketidaknyamanannya.</b>\",\"-10029342423,-10098234823\",\"2026-06-26 23:30\"";
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "telehub_bulk_import_template.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Queries
   const { data: botsData } = useQuery<{ bots: BotData[] }>({
@@ -421,7 +439,17 @@ export default function ImportsPage() {
 
                 {/* File Upload Area */}
                 <div className="space-y-2 pt-2">
-                  <label className="text-xs font-bold text-slate-350 block">File Data CSV (.csv)</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-350 block">File Data CSV (.csv)</label>
+                    <button
+                      type="button"
+                      onClick={downloadTemplateCSV}
+                      className="text-xs text-primary hover:text-primary/80 font-bold flex items-center space-x-1 transition-all active:scale-[0.98]"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Unduh Template CSV</span>
+                    </button>
+                  </div>
                   
                   {isUploading ? (
                     <div className="h-44 border-2 border-dashed border-slate-850 bg-slate-950/50 rounded-2xl flex flex-col items-center justify-center space-y-3">

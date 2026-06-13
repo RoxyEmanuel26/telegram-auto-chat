@@ -384,7 +384,7 @@ function ComposerContent() {
       protectContent,
       disableWebPagePreview,
       status: postStatus === 'DRAFT' ? 'DRAFT' : (postingMode === 'IMMEDIATE' ? 'SEND_NOW' : 'SCHEDULED'),
-      scheduledAt: isScheduling ? new Date(scheduledAt).toISOString() : null,
+      scheduledAt: isScheduling ? new Date(scheduledAt + (scheduledAt.includes('+') || scheduledAt.includes('Z') ? '' : '+07:00')).toISOString() : null,
       recurrence: isRecurring ? { type: recurrenceType, cronExpression } : null
     });
   };

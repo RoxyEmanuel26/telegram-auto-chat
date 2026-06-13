@@ -40,7 +40,7 @@ export const runSchedulerCheck = async (): Promise<void> => {
         let isExpired = false;
 
         if (rec.cronExpression) {
-          const cronInterval = parser.parseExpression(rec.cronExpression);
+          const cronInterval = parser.parseExpression(rec.cronExpression, { tz: 'Asia/Jakarta' });
           nextRunAt = cronInterval.next().toDate();
           isMaxedOut = rec.occurrenceCount !== null && nextOccurrenceCount >= rec.occurrenceCount;
           isExpired = rec.endDate !== null && nextRunAt > rec.endDate;

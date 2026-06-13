@@ -81,7 +81,7 @@ export const createPost = async (req: Request, res: Response): Promise<void> => 
       if (recurrence && recurrence.type && recurrence.cronExpression) {
         let nextRunAt = new Date();
         try {
-          const cronInterval = parser.parseExpression(recurrence.cronExpression);
+          const cronInterval = parser.parseExpression(recurrence.cronExpression, { tz: 'Asia/Jakarta' });
           nextRunAt = cronInterval.next().toDate();
         } catch (err) {
           throw new Error('Format Cron Expression tidak valid');
